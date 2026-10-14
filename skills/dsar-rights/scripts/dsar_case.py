@@ -203,9 +203,31 @@ def build_case(
     return package
 
 
+def render_decision(package: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    approvals = package.get("approvals", [])
+    if approvals:
+        lines.extend(["", "## Decision humana", ""])
+        labels = {"approve": "Aprobado", "reject": "Rechazado"}
+        for item in approvals:
+            lines.append(
+                f"- {labels.get(item['decision'], item['decision'])} por "
+                f"{item['approver']} ({item['role']}) el {item['decided_at']}: "
+                f"{item['comment']}"
+            )
+    execution = package.get("execution")
+    if execution:
+        lines.extend(["", "## Ejecucion (simulada)", ""])
+        lines.append(f"- {execution['summary']}")
+        for record in execution["affected_records"]:
+            lines.append(f"  - `{record}`")
+    return lines
+
+
 def render_response(package: dict[str, Any]) -> str:
+    title = "Respuesta DSAR" if package.get("approvals") else "Borrador de respuesta DSAR"
     lines = [
-        "# Borrador de respuesta DSAR",
+        f"# {title}",
         "",
         f"**Caso:** {package['case_id']}  ",
         f"**Derecho solicitado:** {package['request_type']}  ",
@@ -215,7 +237,7 @@ def render_response(package: dict[str, Any]) -> str:
         "## Resultado preliminar",
         "",
     ]
-    if package["status"] == "IDENTITY_PENDING":
+    if package["identity_verification"]["status"] != "verified":
         lines.append(
             "La busqueda de datos no se inicio porque la verificacion de identidad esta pendiente."
         )
@@ -237,7 +259,11 @@ def render_response(package: dict[str, Any]) -> str:
                     "  - Campos de terceros retirados del borrador: "
                     + ", ".join(record["redacted_fields"])
                 )
-    lines.extend(["", "## Acciones o revisiones pendientes", ""])
+    lines.extend(render_decision(package))
+    pending_title = (
+        "Revisiones consideradas" if package.get("approvals") else "Acciones o revisiones pendientes"
+    )
+    lines.extend(["", f"## {pending_title}", ""])
     lines.append(f"- {package['proposed_action']['description']}")
     for reason in package["hitl"]["reasons"]:
         lines.append(f"- Revision humana: {reason}")

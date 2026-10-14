@@ -1,0 +1,14 @@
+{
+  "LAB-30": {
+    "label": "Politica academica de 30 dias",
+    "response_days": 30,
+    "legal_review_required": false,
+    "disclaimer": "Configuracion ficticia para la demostracion; no constituye un plazo legal."
+  },
+  "LAB-15-REVIEW": {
+    "label": "Politica academica de 15 dias con revision",
+    "response_days": 15,
+    "legal_review_required": true,
+    "disclaimer": "Configuracion ficticia que exige revision especializada."
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "description": "Inventario ficticio de sistemas con PII (RoPA minimo) mantenido por el Agente de Inventario simulado.",
+  "systems": [
+    {
+      "system_id": "crm-demo",
+      "name": "CRM comercial (ficticio)",
+      "owner": "Area Comercial",
+      "pii_categories": ["contact"],
+      "purpose": "Gestion de la relacion con clientes",
+      "lawful_basis": "Ejecucion de contrato",
+      "retention": "5 anos tras el fin de la relacion (ficticio)"
+    },
+    {
+      "system_id": "benefits-demo",
+      "name": "Plataforma de bienestar (ficticia)",
+      "owner": "Recursos Humanos",
+      "pii_categories": ["health"],
+      "purpose": "Administracion de programas de bienestar",
+      "lawful_basis": "Consentimiento explicito",
+      "retention": "Mientras dure el programa (ficticio)"
+    },
+    {
+      "system_id": "billing-demo",
+      "name": "Facturacion (ficticia)",
+      "owner": "Finanzas",
+      "pii_categories": ["financial"],
+      "purpose": "Emision de comprobantes y cobranza",
+      "lawful_basis": "Obligacion legal",
+      "retention": "10 anos por obligacion tributaria (ficticio)"
+    },
+    {
+      "system_id": "app-demo",
+      "name": "Aplicacion movil (ficticia)",
+      "owner": "Producto Digital",
+      "pii_categories": ["usage", "preferences"],
+      "purpose": "Prestacion del servicio y personalizacion",
+      "lawful_basis": "Ejecucion de contrato",
+      "retention": "2 anos desde la ultima actividad (ficticio)"
+    }
+  ]
+}

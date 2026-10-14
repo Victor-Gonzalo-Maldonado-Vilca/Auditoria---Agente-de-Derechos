@@ -1,0 +1,84 @@
+[
+  {
+    "principal_id": "person-001",
+    "record_id": "crm-001",
+    "source_system": "crm-demo",
+    "category": "contact",
+    "sensitive": false,
+    "data": {
+      "name": "Persona Demostracion",
+      "email": "persona@example.test",
+      "manager_email": "tercero@example.test"
+    },
+    "third_party_fields": ["manager_email"],
+    "restrictions": []
+  },
+  {
+    "principal_id": "person-001",
+    "record_id": "health-001",
+    "source_system": "benefits-demo",
+    "category": "health",
+    "sensitive": true,
+    "data": {
+      "program": "Programa ficticio de bienestar",
+      "status": "activo"
+    },
+    "third_party_fields": [],
+    "restrictions": ["Revisar politica de conservacion antes de cualquier supresion"]
+  },
+  {
+    "principal_id": "person-002",
+    "record_id": "crm-002",
+    "source_system": "crm-demo",
+    "category": "contact",
+    "sensitive": false,
+    "data": {
+      "name": "Otra Persona",
+      "email": "otra@example.test"
+    },
+    "third_party_fields": [],
+    "restrictions": []
+  },
+  {
+    "principal_id": "person-003",
+    "record_id": "crm-003",
+    "source_system": "crm-demo",
+    "category": "contact",
+    "sensitive": false,
+    "data": {
+      "name": "Cliente Ficticio Tres",
+      "email": "cliente3@example.test",
+      "phone": "+00 000 000 003"
+    },
+    "third_party_fields": [],
+    "restrictions": []
+  },
+  {
+    "principal_id": "person-003",
+    "record_id": "bill-003",
+    "source_system": "billing-demo",
+    "category": "financial",
+    "sensitive": false,
+    "data": {
+      "invoice_count": 12,
+      "last_invoice": "F-0000-ficticia",
+      "payment_method": "tarjeta terminada en 0000"
+    },
+    "third_party_fields": [],
+    "restrictions": ["Conservacion tributaria ficticia de 10 anos impide la supresion inmediata"]
+  },
+  {
+    "principal_id": "person-004",
+    "record_id": "app-004",
+    "source_system": "app-demo",
+    "category": "usage",
+    "sensitive": false,
+    "data": {
+      "username": "usuario_demo_4",
+      "preferences": {"idioma": "es", "notificaciones": false},
+      "sessions_last_month": 18
+    },
+    "third_party_fields": [],
+    "restrictions": []
+  }
+]

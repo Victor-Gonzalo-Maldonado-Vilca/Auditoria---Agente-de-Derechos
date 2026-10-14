@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import importlib.util
 import json
 import sys
 from datetime import date, datetime
@@ -14,34 +12,18 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.common import (  # noqa: E402
+    ENGINE,
+    RAG,
+    VALIDATOR,
+    build_rag_query,
+    json_hash,
+    read_json,
+)
+
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
-ENGINE_PATH = PROJECT_ROOT / "skills" / "dsar-rights" / "scripts" / "dsar_case.py"
-VALIDATOR_PATH = PROJECT_ROOT / "skills" / "dsar-rights" / "scripts" / "validate_case.py"
-RAG_PATH = PROJECT_ROOT / "rag" / "dsar_rag.py"
-
-
-def load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"No se pudo cargar {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-ENGINE = load_module("dsar_case_engine", ENGINE_PATH)
-VALIDATOR = load_module("dsar_case_validator", VALIDATOR_PATH)
-RAG = load_module("dsar_rag_retriever", RAG_PATH)
-
-
-def read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def json_hash(payload: Any) -> str:
-    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def choose(prompt: str, options: list[tuple[str, str]]) -> str:
@@ -165,15 +147,7 @@ def run(request: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "data": ENGINE.sha256_file(records_path),
         "policies": ENGINE.sha256_file(policies_path),
     }
-    rag_query = " ".join(
-        part
-        for part in [
-            str(request.get("request_type", "")),
-            str(request.get("request_text", "")),
-            "derechos DSAR identidad plazo revision humana",
-        ]
-        if part
-    )
+    rag_query = build_rag_query(request)
     rag_context = RAG.retrieve(rag_query, top_k=3)
     package = ENGINE.build_case(
         request, records, policies, source_hashes, rag_context=rag_context

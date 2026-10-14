@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,59 @@ ALLOWED_STATES = {
 }
 
 
+def canonical_sha256(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def validate_decisions(package: dict[str, Any]) -> list[str]:
+    """Check HITL approvals, simulated execution and the simulated outbox."""
+    errors: list[str] = []
+    status = package["status"]
+    approvals = package.get("approvals", [])
+    decisions = set()
+    for item in approvals:
+        required = {
+            "decision", "approver", "role", "comment", "decided_at", "decision_sha256"
+        }
+        if required - item.keys():
+            errors.append("Decision humana sin datos completos")
+            continue
+        unsigned = {key: value for key, value in item.items() if key != "decision_sha256"}
+        if canonical_sha256(unsigned) != item["decision_sha256"]:
+            errors.append("La huella de una decision humana no coincide")
+        decisions.add(item["decision"])
+    if status in {"APPROVED", "FULFILLED"} and "approve" not in decisions:
+        errors.append(f"El estado {status} exige una aprobacion humana registrada")
+    if status == "REJECTED" and "reject" not in decisions:
+        errors.append("El estado REJECTED exige un rechazo humano registrado")
+    if status == "CLOSED" and not decisions:
+        errors.append("Un caso cerrado exige una decision humana registrada")
+
+    action = package["proposed_action"]
+    executed = action.get("executed")
+    if executed is True:
+        if status not in {"FULFILLED", "CLOSED"} or "approve" not in decisions:
+            errors.append("Una accion solo puede ejecutarse tras aprobacion humana")
+        if action.get("simulated") is not True or not package.get("execution"):
+            errors.append("El prototipo solo admite ejecuciones simuladas y documentadas")
+    elif executed is not False:
+        errors.append("executed debe ser booleano")
+    elif status == "FULFILLED":
+        errors.append("Un caso FULFILLED debe registrar la ejecucion simulada")
+
+    outbox = package.get("outbox")
+    if outbox:
+        if outbox.get("sent") != "simulated":
+            errors.append("El prototipo no puede enviar comunicaciones reales")
+        body = str(outbox.get("body", ""))
+        if hashlib.sha256(body.encode("utf-8")).hexdigest() != outbox.get("body_sha256"):
+            errors.append("La huella de la respuesta enviada no coincide")
+    elif status == "CLOSED":
+        errors.append("Un caso cerrado exige una respuesta registrada")
+    return errors
+
+
 def validate(package: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     required = {
@@ -50,8 +104,7 @@ def validate(package: dict[str, Any]) -> list[str]:
         return errors
     if package["status"] not in ALLOWED_STATES:
         errors.append("Estado no admitido")
-    if package["proposed_action"].get("executed") is not False:
-        errors.append("El prototipo no puede declarar una accion ejecutada")
+    errors.extend(validate_decisions(package))
     identity_status = package["identity_verification"].get("status")
     if identity_status != "verified" and package["discovered_records"]:
         errors.append("Se descubrieron datos sin identidad verificada")
