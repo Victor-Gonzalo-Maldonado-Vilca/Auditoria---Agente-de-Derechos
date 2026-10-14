@@ -16,6 +16,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from agents.common import (  # noqa: E402
     ENGINE,
+    LLM,
     RAG,
     VALIDATOR,
     build_rag_query,
@@ -26,12 +27,16 @@ from agents.common import (  # noqa: E402
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 
 
-def choose(prompt: str, options: list[tuple[str, str]]) -> str:
+def choose(prompt: str, options: list[tuple[str, str]], default: str | None = None) -> str:
     while True:
         print(f"\n{prompt}")
         for key, label in options:
-            print(f"  {key}. {label}")
-        selected = input("Seleccione una opcion: ").strip()
+            marker = "  <- sugerido" if key == default else ""
+            print(f"  {key}. {label}{marker}")
+        hint = f" [Enter = {default}]" if default else ""
+        selected = input(f"Seleccione una opcion{hint}: ").strip()
+        if not selected and default:
+            return default
         values = {key for key, _ in options}
         if selected in values:
             return selected
@@ -48,27 +53,64 @@ def ask_yes_no(prompt: str) -> bool:
         print("Responda s o n.")
 
 
-def build_interactive_request() -> dict[str, Any]:
+RIGHT_KEYS = {
+    "1": "access",
+    "2": "rectification",
+    "3": "erasure",
+    "4": "portability",
+    "5": "objection",
+}
+
+
+def suggest_right(assistant, request_text: str) -> dict[str, Any] | None:
+    print("\nConsultando al modelo para sugerir el derecho...")
+    try:
+        suggestion = assistant.classify_request(request_text)
+    except LLM.LLMError as exc:
+        print(f"La IA no respondio ({exc}). Continue eligiendo manualmente.")
+        return None
+    right = suggestion["suggested_right"]
+    if right:
+        print(
+            f"La IA sugiere: {LLM.RIGHT_LABELS[right]} "
+            f"(confianza {suggestion['confidence']}). {suggestion['rationale']}"
+        )
+    else:
+        print("La IA no pudo identificar el derecho. Elija manualmente.")
+    return suggestion
+
+
+def build_interactive_request(assistant=None) -> tuple[dict[str, Any], dict[str, Any] | None]:
     print("\n=== SIMULADOR ACADEMICO DEL AGENTE DSAR ===")
     print("Use solamente los datos ficticios incluidos en el proyecto.")
+    if assistant:
+        print(f"Asistente IA activo: {assistant.provider}/{assistant.model}")
+    else:
+        print("Asistente IA desactivado: se usan solo las reglas deterministas.")
+
+    request_text = input(
+        "\nEscriba la solicitud del titular como la redactaria el (opcional): "
+    ).strip() or "Solicitud generada mediante el simulador academico."
+    suggestion = suggest_right(assistant, request_text) if assistant else None
+    suggested_key = None
+    if suggestion and suggestion["suggested_right"]:
+        suggested_key = next(
+            key for key, value in RIGHT_KEYS.items() if value == suggestion["suggested_right"]
+        )
 
     right_key = choose(
-        "Derecho que se desea simular:",
-        [
-            ("1", "Acceso"),
-            ("2", "Rectificacion"),
-            ("3", "Supresion"),
-            ("4", "Portabilidad"),
-            ("5", "Oposicion"),
-        ],
+        "Derecho que se desea simular (la decision final es humana):",
+        [(key, LLM.RIGHT_LABELS[value]) for key, value in RIGHT_KEYS.items()],
+        default=suggested_key,
     )
-    right = {
-        "1": "access",
-        "2": "rectification",
-        "3": "erasure",
-        "4": "portability",
-        "5": "objection",
-    }[right_key]
+    right = RIGHT_KEYS[right_key]
+    if suggestion is not None:
+        suggestion = {
+            **suggestion,
+            "final_right": right,
+            "confirmed_by_human": True,
+            "accepted": suggestion["suggested_right"] == right,
+        }
     principal_key = choose(
         "Titular ficticio:",
         [
@@ -89,11 +131,8 @@ def build_interactive_request() -> dict[str, Any]:
         ],
     )
     policy_id = {"1": "LAB-30", "2": "LAB-15-REVIEW"}[policy_key]
-    request_text = input(
-        "Descripcion breve de la solicitud (opcional): "
-    ).strip() or "Solicitud generada mediante el simulador academico."
     now = datetime.now()
-    return {
+    request = {
         "request_id": f"DSAR-SIM-{now:%Y%m%d-%H%M%S}",
         "principal_id": principal_id,
         "request_type": right,
@@ -106,6 +145,7 @@ def build_interactive_request() -> dict[str, Any]:
             "reference": f"sim-verification-{now:%Y%m%d%H%M%S}",
         },
     }
+    return request, suggestion
 
 
 def load_scenario(name: str) -> dict[str, Any]:
@@ -126,6 +166,14 @@ def print_summary(package: dict[str, Any], output_dir: Path) -> None:
     print(f"Registros:         {len(package['discovered_records'])}")
     print(f"Revision humana:   {'SI' if package['hitl']['required'] else 'NO'}")
     print(f"Fuentes RAG:       {len(package['rag']['retrieved_chunks'])}")
+    llm = package["llm"]
+    if llm["enabled"]:
+        estado_ia = f"{llm['provider']}/{llm['model']}"
+        if llm["error"]:
+            estado_ia += f" (fallo: {llm['error']})"
+        print(f"Asistente IA:      {estado_ia}")
+    else:
+        print("Asistente IA:      desactivado")
     if package["hitl"]["reasons"]:
         print("Motivos:")
         for reason in package["hitl"]["reasons"]:
@@ -134,10 +182,39 @@ def print_summary(package: dict[str, Any], output_dir: Path) -> None:
     print(f"  - {output_dir / 'request.json'}")
     print(f"  - {output_dir / 'case-package.json'}")
     print(f"  - {output_dir / 'response-draft.md'}")
+    if (output_dir / "response-draft-ia.md").exists():
+        print(f"  - {output_dir / 'response-draft-ia.md'}")
     print("\nLa respuesta es un borrador. Ninguna accion fue ejecutada.")
 
 
-def run(request: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+def attach_llm(
+    package: dict[str, Any],
+    request: dict[str, Any],
+    assistant,
+    classification: dict[str, Any] | None,
+) -> str | None:
+    """Add the optional AI draft; the engine's decisions are never modified."""
+    if assistant is None:
+        package["llm"] = {
+            "enabled": False,
+            "reason": "Sin modelo configurado o desactivado con --no-ai.",
+        }
+        return None
+    try:
+        body = assistant.draft_response(package, str(request.get("request_text", "")))
+    except LLM.LLMError as exc:
+        package["llm"] = assistant.metadata(classification, error=str(exc))
+        return None
+    package["llm"] = assistant.metadata(classification)
+    return LLM.render_ai_draft(package, body, assistant)
+
+
+def run(
+    request: dict[str, Any],
+    output_dir: Path,
+    assistant=None,
+    classification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     records_path = FIXTURES / "subject-data.json"
     policies_path = FIXTURES / "policies.json"
     records = read_json(records_path)
@@ -152,6 +229,7 @@ def run(request: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     package = ENGINE.build_case(
         request, records, policies, source_hashes, rag_context=rag_context
     )
+    ai_draft = attach_llm(package, request, assistant, classification)
     errors = VALIDATOR.validate(package)
     if errors:
         raise RuntimeError("Expediente invalido: " + "; ".join(errors))
@@ -166,6 +244,8 @@ def run(request: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     (output_dir / "response-draft.md").write_text(
         ENGINE.render_response(package), encoding="utf-8"
     )
+    if ai_draft:
+        (output_dir / "response-draft-ia.md").write_text(ai_draft, encoding="utf-8")
     return package
 
 
@@ -178,22 +258,39 @@ def main() -> int:
         help="Modo interactivo o escenario preparado.",
     )
     parser.add_argument(
+        "--request",
+        type=Path,
+        help="Archivo JSON con una solicitud propia; sustituye a --scenario.",
+    )
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help="Desactiva el asistente de lenguaje aunque exista una clave configurada.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         help="Directorio de salida. Por defecto usa simulaciones/<case-id>.",
     )
     args = parser.parse_args()
 
-    request = (
-        build_interactive_request()
-        if args.scenario == "interactive"
-        else load_scenario(args.scenario)
-    )
+    assistant = None if args.no_ai else LLM.DsarAssistant.from_env()
+    classification = None
+    if args.request:
+        try:
+            request = read_json(args.request)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"ERROR: no se pudo leer la solicitud {args.request}: {exc}", file=sys.stderr)
+            return 1
+    elif args.scenario == "interactive":
+        request, classification = build_interactive_request(assistant)
+    else:
+        request = load_scenario(args.scenario)
     output_dir = args.output_dir or (
         PROJECT_ROOT / "simulaciones" / request["request_id"].lower()
     )
     try:
-        package = run(request, output_dir.resolve())
+        package = run(request, output_dir.resolve(), assistant, classification)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

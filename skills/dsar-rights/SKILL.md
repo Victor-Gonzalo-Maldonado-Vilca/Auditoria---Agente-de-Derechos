@@ -29,6 +29,7 @@ Actua como asistente del responsable de privacidad. Convierte una solicitud de u
 - Lee [case-schema.md](references/case-schema.md) al preparar entradas o validar un expediente.
 - Usa [response-template.md](assets/response-template.md) para redactar la comunicacion, manteniendola siempre como borrador.
 - Usa el recuperador vectorial local `rag/dsar_rag.py` para obtener contexto verificable. Regenera el indice cuando cambien las referencias. El RAG orienta el borrador, pero no reemplaza la politica aprobada ni la decision humana.
+- El simulador puede usar un asistente de lenguaje opcional (`llm/dsar_llm.py`, Gemini u OpenRouter) para sugerir el derecho y redactar un borrador. Solo recibe hechos minimizados sin valores de PII y no tiene autoridad sobre estado, identidad ni HITL.
 - Para una demostracion guiada, ejecuta `demo/dsar_simulator.py` desde la raiz del proyecto. Para integraciones o pruebas directas, usa `scripts/dsar_case.py` y valida el resultado con `scripts/validate_case.py`.
 - Para el ciclo completo con aprobacion humana usa `scripts/case_lifecycle.py` (confirmar identidad, aprobar, rechazar, ejecutar de forma simulada, responder y cerrar). Ninguna transicion se salta la decision humana registrada.
 - El orquestador `agents/orchestrator.py` coordina el Flujo 3 con el Agente de Inventario y el Agente de Evidencia simulados. La interfaz web (`app/`, FastAPI + HTML) expone el panel HITL y una API REST documentada en `/docs`.

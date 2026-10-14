@@ -13,6 +13,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = PROJECT_ROOT / "skills" / "dsar-rights" / "scripts"
 RAG_PATH = PROJECT_ROOT / "rag" / "dsar_rag.py"
+LLM_PATH = PROJECT_ROOT / "llm" / "dsar_llm.py"
 DATA_DIR = PROJECT_ROOT / "data"
 
 
@@ -32,10 +33,11 @@ LIFECYCLE = load_module("dsar_case_lifecycle", SCRIPTS_DIR / "case_lifecycle.py"
 ENGINE = LIFECYCLE.engine
 VALIDATOR = load_module("dsar_case_validator", SCRIPTS_DIR / "validate_case.py")
 RAG = load_module("dsar_rag_retriever", RAG_PATH)
+LLM = load_module("dsar_llm_assistant", LLM_PATH)
 
 
 def read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def json_hash(payload: Any) -> str:
