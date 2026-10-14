@@ -20,10 +20,10 @@ templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templat
 
 RIGHT_LABELS = {
     "access": "Acceso",
-    "rectification": "Rectificacion",
-    "erasure": "Supresion",
+    "rectification": "Rectificación",
+    "erasure": "Supresión",
     "portability": "Portabilidad",
-    "objection": "Oposicion",
+    "objection": "Oposición",
 }
 STATUS_LABELS = {
     "RECEIVED": "Recibida",
@@ -31,14 +31,23 @@ STATUS_LABELS = {
     "IDENTITY_PENDING": "Identidad pendiente",
     "VERIFIED": "Verificada",
     "DISCOVERY": "Descubrimiento",
-    "REVIEW": "En revision",
-    "APPROVAL_REQUIRED": "Requiere aprobacion",
+    "REVIEW": "En revisión",
+    "APPROVAL_REQUIRED": "Requiere aprobación",
     "APPROVED": "Aprobada",
     "FULFILLED": "Ejecutada (simulada)",
     "CLOSED": "Cerrada",
     "REJECTED": "Rechazada",
 }
-ROLES = ["DPO", "Responsable de privacidad", "Asesoria legal"]
+STATUS_TONES = {
+    "IDENTITY_PENDING": "warning",
+    "REVIEW": "info",
+    "APPROVAL_REQUIRED": "warning",
+    "APPROVED": "success",
+    "FULFILLED": "teal",
+    "CLOSED": "neutral",
+    "REJECTED": "danger",
+}
+ROLES = ["DPO", "Responsable de privacidad", "Asesoría legal"]
 VERIFICATION_METHODS = ["Presencial", "Portal autenticado", "Videollamada", "Documento cotejado"]
 CHANNELS = ["email-simulado", "portal-simulado", "carta-simulada"]
 ACTION_ROUTES = {
@@ -49,10 +58,23 @@ ACTION_ROUTES = {
     "send",
     "close",
 }
+AWAITING_DECISION = {"IDENTITY_PENDING", "REVIEW", "APPROVAL_REQUIRED"}
+IN_PROGRESS = {"APPROVED", "FULFILLED", "REJECTED"}
+FILTERS = {
+    "todos": ("Todos", lambda item: True),
+    "decision": ("Esperan decisión", lambda item: item["status"] in AWAITING_DECISION),
+    "curso": ("En curso", lambda item: item["status"] in IN_PROGRESS),
+    "vencidos": (
+        "Vencidos",
+        lambda item: item["status"] != "CLOSED" and item["days_left"] < 0,
+    ),
+    "cerrados": ("Cerrados", lambda item: item["status"] == "CLOSED"),
+}
 
 templates.env.globals.update(
     RIGHT_LABELS=RIGHT_LABELS,
     STATUS_LABELS=STATUS_LABELS,
+    STATUS_TONES=STATUS_TONES,
     ROLES=ROLES,
     VERIFICATION_METHODS=VERIFICATION_METHODS,
     CHANNELS=CHANNELS,
@@ -60,6 +82,10 @@ templates.env.globals.update(
 templates.env.filters["pretty_json"] = lambda value: json.dumps(
     value, indent=2, ensure_ascii=False
 )
+templates.env.filters["fmt_dt"] = lambda value: (
+    str(value).replace("T", " ")[:16] + " UTC" if value else "—"
+)
+templates.env.filters["short_hash"] = lambda value: f"{str(value)[:12]}…"
 
 
 def orchestrator_of(request: Request) -> Orchestrator:
@@ -68,6 +94,40 @@ def orchestrator_of(request: Request) -> Orchestrator:
 
 def days_left(package: dict[str, Any]) -> int:
     return (date.fromisoformat(package["deadline_at"]) - date.today()).days
+
+
+def flow_steps(package: dict[str, Any]) -> list[dict[str, str]]:
+    """Etapas visibles del Flujo 3 con su estado: done, current, rejected o skipped."""
+    states = {item["state"] for item in package["audit_trail"]}
+    rejected = "REJECTED" in states
+    steps = [
+        ("Recibida", True),
+        ("Identidad", "VERIFIED" in states),
+        ("Datos localizados", "DISCOVERY" in states),
+        (
+            "Rechazada" if rejected else "Aprobada" if "APPROVED" in states else "Decisión",
+            rejected or "APPROVED" in states,
+        ),
+        ("Ejecución", "FULFILLED" in states),
+        ("Respuesta", bool(package.get("outbox"))),
+        ("Cerrada", "CLOSED" in states),
+    ]
+    result = []
+    current_found = False
+    for index, (label, done) in enumerate(steps):
+        if rejected and index in {1, 2, 4} and not done:
+            status = "skipped"
+        elif rejected and index == 3:
+            status = "rejected"
+        elif done:
+            status = "done"
+        elif not current_found:
+            status = "current"
+            current_found = True
+        else:
+            status = "todo"
+        result.append({"label": label, "status": status})
+    return result
 
 
 def redirect(path: str, **params: str) -> RedirectResponse:
@@ -86,23 +146,33 @@ def render(request: Request, name: str, context: dict[str, Any], status_code: in
 
 
 @router.get("/", response_class=HTMLResponse)
-def inbox(request: Request):
+def inbox(request: Request, filtro: str = "todos"):
     cases = orchestrator_of(request).list_cases()
     for item in cases:
         item["days_left"] = days_left(item)
-    counts = Counter(item["status"] for item in cases)
-    open_cases = [item for item in cases if item["status"] not in {"CLOSED"}]
+    if filtro not in FILTERS:
+        filtro = "todos"
+    filters = [
+        {
+            "key": key,
+            "label": label,
+            "count": sum(1 for item in cases if predicate(item)),
+        }
+        for key, (label, predicate) in FILTERS.items()
+    ]
+    open_cases = [item for item in cases if item["status"] != "CLOSED"]
     return render(
         request,
         "index.html",
         {
-            "cases": cases,
-            "counts": counts,
-            "pending_hitl": sum(
-                1 for item in open_cases
-                if item["status"] in {"APPROVAL_REQUIRED", "REVIEW", "IDENTITY_PENDING"}
-            ),
-            "due_soon": sum(1 for item in open_cases if item["days_left"] <= 5),
+            "cases": [item for item in cases if FILTERS[filtro][1](item)],
+            "total": len(cases),
+            "filters": filters,
+            "active_filter": filtro,
+            "pending_hitl": sum(1 for item in cases if item["status"] in AWAITING_DECISION),
+            "due_soon": sum(1 for item in open_cases if 0 <= item["days_left"] <= 5),
+            "overdue": sum(1 for item in open_cases if item["days_left"] < 0),
+            "closed": sum(1 for item in cases if item["status"] == "CLOSED"),
         },
     )
 
@@ -165,6 +235,7 @@ def case_detail(request: Request, case_id: str):
             "actions": orchestrator.available_actions(case_id),
             "draft": orchestrator.response_markdown(case_id),
             "evidence": orchestrator.evidence.entries(case_id),
+            "steps": flow_steps(package),
         },
     )
 

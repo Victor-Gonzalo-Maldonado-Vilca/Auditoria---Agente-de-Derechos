@@ -1,60 +1,83 @@
 {% set nav = "new" %}
 {% extends "base.html" %}
-{% block title %}Nueva solicitud · Agente DSAR{% endblock %}
+{% import "_ui.html" as ui with context %}
+{% block title %}Nueva solicitud{% endblock %}
 {% block content %}
-<h1>Nueva solicitud de derechos</h1>
-<p class="subtitle">El orquestador registra la solicitud, consulta al Agente de Inventario si la identidad está verificada y deja evidencia encadenada.</p>
+<header class="page-header">
+  <div>
+    <h1>Nueva solicitud de derechos</h1>
+    <p class="lead">El orquestador registra la solicitud, consulta al Agente de Inventario si la identidad está verificada y deja evidencia encadenada.</p>
+  </div>
+</header>
 
-<div class="grid grid-2">
+<div class="layout-form">
   <form class="card" method="post" action="/solicitudes">
-    <div class="field">
-      <label for="request_type">Derecho solicitado</label>
-      <select id="request_type" name="request_type" required>
-        {% for key, label in RIGHT_LABELS.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
-      </select>
+    <div class="card-header"><h2>Datos de la solicitud</h2><span class="meta"><span class="label"><span class="req">*</span></span> obligatorio</span></div>
+    <div class="card-body">
+      <fieldset class="field fieldset">
+        <legend class="label">Derecho solicitado<span class="req">*</span></legend>
+        <div class="choice-grid">
+          {% for key, label in RIGHT_LABELS.items() %}
+          <label class="choice"><input type="radio" name="request_type" value="{{ key }}" {% if loop.first %}checked{% endif %} required><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="form-grid mt-5">
+        <div class="field">
+          <label class="label" for="principal_id">Titular ficticio<span class="req">*</span></label>
+          <select class="select" id="principal_id" name="principal_id" required>
+            {% for principal in principals %}<option value="{{ principal }}">{{ principal }}{% if principal == 'person-999' %} — sin registros{% endif %}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="received_at">Fecha de recepción</label>
+          <input class="input" type="date" id="received_at" name="received_at" value="{{ today }}">
+        </div>
+        <div class="field span-2">
+          <label class="label" for="policy_id">Política de plazos<span class="req">*</span></label>
+          <select class="select" id="policy_id" name="policy_id" required>
+            {% for key, policy in policies.items() %}<option value="{{ key }}">{{ key }} · {{ policy.label }}</option>{% endfor %}
+          </select>
+          <span class="help">El plazo se calcula con la política configurada, no con un valor supuesto de la norma.</span>
+        </div>
+        <div class="field span-2">
+          <label class="label" for="request_text">Texto de la solicitud</label>
+          <textarea class="textarea" id="request_text" name="request_text" placeholder="Ej.: Quiero conocer los datos personales que mantienen sobre mí."></textarea>
+          <span class="help">Se guarda como dato no confiable: nunca se interpreta como instrucción.</span>
+        </div>
+        <div class="field span-2">
+          <label class="switch">
+            <input type="checkbox" name="identity_verified">
+            <span><strong>La identidad fue verificada por un canal autorizado</strong>
+              <small>Si no se marca, el caso queda en «Identidad pendiente» y no se busca ningún dato personal.</small></span>
+          </label>
+        </div>
+        <div class="field span-2">
+          <label class="label" for="identity_reference">Referencia de verificación</label>
+          <input class="input" type="text" id="identity_reference" name="identity_reference" placeholder="Ej.: verif-portal-0001" autocomplete="off">
+          <span class="help">Solo se registra la referencia; nunca el documento de identidad.</span>
+        </div>
+      </div>
     </div>
-    <div class="field">
-      <label for="principal_id">Titular ficticio</label>
-      <select id="principal_id" name="principal_id" required>
-        {% for principal in principals %}<option value="{{ principal }}">{{ principal }}{% if principal == 'person-999' %} (sin registros){% endif %}</option>{% endfor %}
-      </select>
+    <div class="card-footer form-actions">
+      <a class="btn btn-secondary" href="/">Cancelar</a>
+      <button class="btn btn-primary" type="submit">{{ ui.icon("send") }}Registrar solicitud</button>
     </div>
-    <div class="field">
-      <label for="policy_id">Política de plazos</label>
-      <select id="policy_id" name="policy_id" required>
-        {% for key, policy in policies.items() %}<option value="{{ key }}">{{ key }} · {{ policy.label }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="received_at">Fecha de recepción</label>
-      <input type="date" id="received_at" name="received_at" value="{{ today }}">
-    </div>
-    <div class="field">
-      <label for="request_text">Texto de la solicitud</label>
-      <textarea id="request_text" name="request_text" placeholder="Ej.: Quiero conocer los datos personales que mantienen sobre mí."></textarea>
-      <div class="hint">Se guarda como dato no confiable: nunca se interpreta como instrucción.</div>
-    </div>
-    <div class="field">
-      <label class="check"><input type="checkbox" name="identity_verified"> La identidad fue verificada por un canal autorizado</label>
-    </div>
-    <div class="field">
-      <label for="identity_reference">Referencia de verificación</label>
-      <input type="text" id="identity_reference" name="identity_reference" placeholder="Ej.: verif-portal-0001">
-      <div class="hint">Solo se registra la referencia; nunca el documento de identidad.</div>
-    </div>
-    <button class="btn" type="submit">Registrar solicitud</button>
   </form>
 
-  <aside class="card">
-    <h2>Qué ocurre al registrar</h2>
-    <ol>
-      <li><strong>Agente de Derechos</strong>: registra y clasifica el derecho y la política.</li>
-      <li>Si la identidad no está verificada, el caso queda en <em>Identidad pendiente</em> y no se busca PII.</li>
-      <li><strong>Agente de Inventario</strong>: localiza los registros del titular en los sistemas inventariados.</li>
-      <li>El RAG recupera el fundamento normativo y se arma el expediente.</li>
-      <li><strong>Agente de Evidencia</strong>: registra el expediente en la cadena de hashes.</li>
-      <li>El caso espera la decisión del DPO en el panel HITL.</li>
-    </ol>
+  <aside class="card sticky">
+    <div class="card-header"><h2>Qué ocurre al registrar</h2></div>
+    <div class="card-body">
+      <ol class="steps-list">
+        <li><strong>Agente de Derechos</strong> registra y clasifica el derecho y la política.</li>
+        <li>Sin identidad verificada, el caso se detiene y <strong>no se busca PII</strong>.</li>
+        <li><strong>Agente de Inventario</strong> localiza los registros en los sistemas inventariados.</li>
+        <li>El <strong>RAG</strong> recupera el fundamento normativo y se arma el expediente.</li>
+        <li><strong>Agente de Evidencia</strong> registra el expediente en la cadena de hashes.</li>
+        <li>El caso queda a la espera de la <strong>decisión del DPO</strong>.</li>
+      </ol>
+    </div>
   </aside>
 </div>
 {% endblock %}

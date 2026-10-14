@@ -1,207 +1,282 @@
 {% set nav = "inbox" %}
 {% extends "base.html" %}
-{% block title %}{{ case.case_id }} · Agente DSAR{% endblock %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ case.case_id }}{% endblock %}
 {% block content %}
-<h1>{{ case.case_id }} <span class="pill status-{{ case.status|lower }}">{{ STATUS_LABELS.get(case.status, case.status) }}</span></h1>
-<p class="subtitle">
-  {{ RIGHT_LABELS.get(case.request_type, case.request_type) }} · titular <span class="mono">{{ case.principal_id }}</span> ·
-  vence el {{ case.deadline_at }}
-  {% if case.status != 'CLOSED' %}
-    (<span class="{{ 'late' if days_left <= 5 else '' }}">{% if days_left < 0 %}vencido hace {{ -days_left }} días{% else %}{{ days_left }} días restantes{% endif %}</span>)
-  {% endif %}
-</p>
-
-<div class="grid grid-2">
+<header class="page-header">
   <div>
-    <section class="card">
-      <h2>Panel HITL</h2>
-      {% if case.hitl.reasons %}
-        <p class="muted">Motivos que exigen decisión humana:</p>
-        <ul class="reasons">{% for reason in case.hitl.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
-      {% else %}
-        <p class="muted">Sin motivos especiales: revisión humana ordinaria antes de ejecutar.</p>
-      {% endif %}
-      <p><strong>Acción propuesta:</strong> {{ case.proposed_action.description }}
-        {% if case.proposed_action.executed %}<span class="pill status-fulfilled">ejecutada (simulada)</span>{% else %}<span class="muted">(no ejecutada)</span>{% endif %}</p>
+    <a class="breadcrumb" href="/">{{ ui.icon("back") }}Bandeja de casos</a>
+    <div class="title-row">
+      <h1>{{ case.case_id }}</h1>
+      {{ ui.status_badge(case.status, "badge-lg") }}
+    </div>
+    <div class="meta-row">
+      <span>{{ ui.icon("file") }}{{ RIGHT_LABELS.get(case.request_type, case.request_type) }}</span>
+      <span>{{ ui.icon("user") }}<span class="mono">{{ case.principal_id }}</span></span>
+      <span>{{ ui.icon("calendar") }}Vence el {{ case.deadline_at }}&nbsp;{{ ui.deadline(case, days_left) }}</span>
+    </div>
+  </div>
+  <div class="btn-group">
+    <a class="btn btn-secondary btn-sm" href="/casos/{{ case.case_id }}/respuesta.md">{{ ui.icon("download") }}Respuesta .md</a>
+    <a class="btn btn-secondary btn-sm" href="/casos/{{ case.case_id }}/expediente.json">{{ ui.icon("download") }}Expediente .json</a>
+  </div>
+</header>
 
-      {% if not actions %}
-        <p class="muted">No hay acciones pendientes para este estado.</p>
-      {% endif %}
+<section class="card mb-6" aria-label="Avance del flujo">
+  <ol class="stepper">
+    {% for step in steps %}
+      <li class="step {{ step.status }}" {% if step.status == 'current' %}aria-current="step"{% endif %}>
+        <span class="step-dot">{% if step.status == 'done' %}✓{% elif step.status == 'rejected' %}✕{% else %}{{ loop.index }}{% endif %}</span>
+        <span>{{ step.label }}</span>
+      </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<div class="layout-detail">
+  <div class="stack">
+    <section class="card action-panel" aria-labelledby="hitl-title">
+      <div class="card-header">
+        <h2 id="hitl-title">Panel HITL</h2>
+        {% if case.hitl.required %}<span class="badge plain tone-warning">Decisión requerida</span>{% else %}<span class="badge plain tone-neutral">Revisión ordinaria</span>{% endif %}
+      </div>
+      <div class="card-body">
+        {% if case.hitl.reasons %}
+          <ul class="reason-list">
+            {% for reason in case.hitl.reasons %}<li>{{ ui.icon("alert") }}<span>{{ reason }}</span></li>{% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted text-sm">Sin motivos especiales: la revisión humana ordinaria es igualmente obligatoria antes de ejecutar.</p>
+        {% endif %}
+        <div class="quote mt-4">
+          <strong>Acción propuesta:</strong> {{ case.proposed_action.description }}
+          {% if case.proposed_action.executed %}<span class="badge plain tone-teal">Ejecutada (simulada)</span>{% else %}<span class="muted">· no ejecutada</span>{% endif %}
+        </div>
+      </div>
 
       {% if 'verify_identity' in actions %}
-      <form class="action" method="post" action="/casos/{{ case.case_id }}/verify-identity">
-        <h2>Confirmar identidad</h2>
-        <p class="hint">Registre solo el método y la referencia de la verificación externa; nunca el documento.</p>
-        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
-        <div class="field"><label>Método</label>
-          <select name="method">{% for method in VERIFICATION_METHODS %}<option>{{ method }}</option>{% endfor %}</select></div>
-        <div class="field"><label>Referencia</label><input type="text" name="reference" required placeholder="Ej.: verif-0001"></div>
-        <button class="btn" type="submit">Confirmar identidad y descubrir datos</button>
+      <form class="card-body" method="post" action="/casos/{{ case.case_id }}/verify-identity">
+        <h3 class="action-title">{{ ui.icon("user") }}Confirmar identidad</h3>
+        <p class="action-desc">Registre solo el método y la referencia de la verificación externa; nunca el documento.</p>
+        <div class="form-grid">
+          <div class="field"><label class="label" for="vi-actor">Responsable<span class="req">*</span></label><input class="input" id="vi-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
+          <div class="field"><label class="label" for="vi-method">Método</label>
+            <select class="select" id="vi-method" name="method">{% for method in VERIFICATION_METHODS %}<option>{{ method }}</option>{% endfor %}</select></div>
+          <div class="field span-2"><label class="label" for="vi-ref">Referencia<span class="req">*</span></label><input class="input" id="vi-ref" type="text" name="reference" required placeholder="Ej.: verif-0001" autocomplete="off"></div>
+        </div>
+        <div class="form-actions mt-4">
+          <button class="btn btn-primary" type="submit">{{ ui.icon("check") }}Confirmar y descubrir datos</button>
+        </div>
       </form>
       {% endif %}
 
       {% if 'approve' in actions or 'reject' in actions %}
-      <form class="action" method="post">
-        <h2>Decisión del responsable</h2>
-        <div class="field"><label>Nombre</label><input type="text" name="actor" value="{{ actor }}" required></div>
-        <div class="field"><label>Rol</label>
-          <select name="role">{% for role in ROLES %}<option>{{ role }}</option>{% endfor %}</select></div>
-        <div class="field"><label>Comentario o fundamento</label><textarea name="comment" required></textarea></div>
-        <div class="btn-row">
-          {% if 'approve' in actions %}<button class="btn" type="submit" formaction="/casos/{{ case.case_id }}/approve">Aprobar plan</button>{% endif %}
-          {% if 'reject' in actions %}<button class="btn danger" type="submit" formaction="/casos/{{ case.case_id }}/reject">Rechazar solicitud</button>{% endif %}
+      <form class="card-body" method="post">
+        <h3 class="action-title">{{ ui.icon("shield") }}Decisión del responsable</h3>
+        <p class="action-desc">La decisión queda firmada con nombre, rol, fecha y una huella SHA-256.</p>
+        <div class="form-grid">
+          <div class="field"><label class="label" for="d-actor">Nombre<span class="req">*</span></label><input class="input" id="d-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
+          <div class="field"><label class="label" for="d-role">Rol</label>
+            <select class="select" id="d-role" name="role">{% for role in ROLES %}<option>{{ role }}</option>{% endfor %}</select></div>
+          <div class="field span-2"><label class="label" for="d-comment">Comentario o fundamento<span class="req">*</span></label><textarea class="textarea" id="d-comment" name="comment" required placeholder="Motive la decisión; en un rechazo, indique el fundamento."></textarea></div>
+        </div>
+        <div class="form-actions mt-4">
+          {% if 'reject' in actions %}<button class="btn btn-danger" type="submit" formaction="/casos/{{ case.case_id }}/reject">{{ ui.icon("x") }}Rechazar</button>{% endif %}
+          {% if 'approve' in actions %}<button class="btn btn-primary" type="submit" formaction="/casos/{{ case.case_id }}/approve">{{ ui.icon("check") }}Aprobar plan</button>{% endif %}
         </div>
       </form>
       {% endif %}
 
       {% if 'fulfill' in actions %}
-      <form class="action" method="post" action="/casos/{{ case.case_id }}/fulfill">
-        <h2>Ejecutar (simulado)</h2>
-        <p class="hint">Registra la ejecución aprobada. Los sistemas origen no se modifican.</p>
-        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
-        <button class="btn" type="submit">Registrar ejecución simulada</button>
+      <form class="card-body" method="post" action="/casos/{{ case.case_id }}/fulfill">
+        <h3 class="action-title">{{ ui.icon("play") }}Ejecutar (simulado)</h3>
+        <p class="action-desc">Registra la ejecución aprobada. Los sistemas origen no se modifican.</p>
+        <div class="field"><label class="label" for="f-actor">Responsable<span class="req">*</span></label><input class="input" id="f-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
+        <div class="form-actions mt-4"><button class="btn btn-primary" type="submit">{{ ui.icon("play") }}Registrar ejecución</button></div>
       </form>
       {% endif %}
 
       {% if 'send' in actions %}
-      <form class="action" method="post" action="/casos/{{ case.case_id }}/send">
-        <h2>Enviar respuesta (simulado)</h2>
-        <p class="hint">La respuesta se congela con su huella SHA-256 en la bandeja de salida simulada.</p>
-        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
-        <div class="field"><label>Canal</label>
-          <select name="channel">{% for channel in CHANNELS %}<option>{{ channel }}</option>{% endfor %}</select></div>
-        <button class="btn" type="submit">Enviar respuesta</button>
+      <form class="card-body" method="post" action="/casos/{{ case.case_id }}/send">
+        <h3 class="action-title">{{ ui.icon("send") }}Enviar respuesta (simulado)</h3>
+        <p class="action-desc">La respuesta se congela con su huella SHA-256 en la bandeja de salida simulada.</p>
+        <div class="form-grid">
+          <div class="field"><label class="label" for="s-actor">Responsable<span class="req">*</span></label><input class="input" id="s-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
+          <div class="field"><label class="label" for="s-channel">Canal</label>
+            <select class="select" id="s-channel" name="channel">{% for channel in CHANNELS %}<option>{{ channel }}</option>{% endfor %}</select></div>
+        </div>
+        <div class="form-actions mt-4"><button class="btn btn-primary" type="submit">{{ ui.icon("send") }}Enviar respuesta</button></div>
       </form>
       {% endif %}
 
       {% if 'close' in actions %}
-      <form class="action" method="post" action="/casos/{{ case.case_id }}/close">
-        <h2>Cerrar caso</h2>
-        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
-        <button class="btn" type="submit">Cerrar caso</button>
+      <form class="card-body" method="post" action="/casos/{{ case.case_id }}/close">
+        <h3 class="action-title">{{ ui.icon("archive") }}Cerrar caso</h3>
+        <p class="action-desc">La respuesta ya fue registrada. Cierre el caso para finalizar el flujo.</p>
+        <div class="field"><label class="label" for="c-actor">Responsable<span class="req">*</span></label><input class="input" id="c-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
+        <div class="form-actions mt-4"><button class="btn btn-primary" type="submit">{{ ui.icon("archive") }}Cerrar caso</button></div>
       </form>
       {% endif %}
+
+      {% if not actions %}
+      <div class="card-body">
+        <div class="alert alert-inline tone-success">{{ ui.icon("check") }}<span>Flujo finalizado: no quedan acciones pendientes.</span></div>
+      </div>
+      {% endif %}
     </section>
 
-    <section class="card">
-      <h2>Datos localizados</h2>
+    <section class="card" aria-labelledby="records-title">
+      <div class="card-header">
+        <h2 id="records-title">Datos localizados</h2>
+        <span class="meta">{{ case.discovered_records|length }} registros · {{ case.source_systems|length }} sistemas</span>
+      </div>
       {% if case.identity_verification.status != 'verified' %}
-        <p class="muted">Descubrimiento bloqueado: la identidad no está verificada.</p>
+        <div class="card-body"><div class="alert alert-inline tone-warning">{{ ui.icon("lock") }}<span>Descubrimiento bloqueado: la identidad no está verificada.</span></div></div>
       {% elif not case.discovered_records %}
-        <p class="muted">No se localizaron registros para este titular.</p>
+        <div class="card-body"><p class="muted">No se localizaron registros para este titular.</p></div>
       {% else %}
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Origen</th><th>Categoría</th><th>Datos</th><th>Revisión</th></tr></thead>
-          <tbody>
-          {% for record in case.discovered_records %}
-            <tr>
-              <td class="mono">{{ record.source_system }}/{{ record.record_id }}</td>
-              <td>{{ record.category }}{% if record.sensitive %} <span class="pill status-approval_required">sensible</span>{% endif %}</td>
-              <td><pre>{{ record.data|pretty_json }}</pre></td>
-              <td>
-                {% if record.redacted_fields %}<div>Retirado (tercero): {{ record.redacted_fields|join(', ') }}</div>{% endif %}
-                {% for restriction in record.restrictions %}<div>{{ restriction }}</div>{% endfor %}
-                {% if not record.redacted_fields and not record.restrictions %}<span class="muted">—</span>{% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
+        {% for record in case.discovered_records %}
+        <article class="record">
+          <div class="record-head">
+            <span class="record-source">{{ record.source_system }}/{{ record.record_id }}</span>
+            <span class="btn-group">
+              <span class="badge plain tone-neutral">{{ record.category }}</span>
+              {% if record.sensitive %}<span class="badge plain tone-danger">Sensible</span>{% endif %}
+            </span>
+          </div>
+          <table class="kv-table">
+            {% for key, value in record.data.items() %}
+              <tr><th scope="row">{{ key }}</th><td>{% if value is mapping %}<code>{{ value|pretty_json }}</code>{% else %}{{ value }}{% endif %}</td></tr>
+            {% endfor %}
+          </table>
+          {% if record.redacted_fields or record.restrictions %}
+          <div class="record-notes">
+            {% if record.redacted_fields %}<div class="note tone-info">{{ ui.icon("eye_off") }}<span>Retirado por ser de un tercero: <strong>{{ record.redacted_fields|join(', ') }}</strong></span></div>{% endif %}
+            {% for restriction in record.restrictions %}<div class="note tone-warning">{{ ui.icon("alert") }}<span>{{ restriction }}</span></div>{% endfor %}
+          </div>
+          {% endif %}
+        </article>
+        {% endfor %}
       {% endif %}
     </section>
 
-    <section class="card">
-      <h2>{{ 'Respuesta enviada' if case.outbox else 'Borrador de respuesta' }}</h2>
-      {% if case.outbox %}
-        <p class="muted">Canal {{ case.outbox.channel }} · {{ case.outbox.sent_at }} · por {{ case.outbox.actor }}</p>
-        <p class="hash">SHA-256 {{ case.outbox.body_sha256 }}</p>
-      {% endif %}
-      <pre>{{ draft }}</pre>
-      <div class="btn-row" style="margin-top:12px">
-        <a class="btn secondary" href="/casos/{{ case.case_id }}/respuesta.md">Descargar respuesta (.md)</a>
-        <a class="btn secondary" href="/casos/{{ case.case_id }}/expediente.json">Descargar expediente (.json)</a>
+    <section class="card" aria-labelledby="response-title">
+      <div class="card-header">
+        <h2 id="response-title">{{ 'Respuesta enviada' if case.outbox else 'Borrador de respuesta' }}</h2>
+        {% if case.outbox %}<span class="badge plain tone-teal">{{ case.outbox.channel }}</span>{% else %}<span class="badge plain tone-neutral">Borrador</span>{% endif %}
+      </div>
+      <div class="card-body stack-sm">
+        {% if case.outbox %}
+          <p class="muted text-sm">Enviada el {{ case.outbox.sent_at|fmt_dt }} por {{ case.outbox.actor }}</p>
+          <p class="hash" title="{{ case.outbox.body_sha256 }}">SHA-256 {{ case.outbox.body_sha256 }}</p>
+        {% endif %}
+        <pre class="code-block">{{ draft }}</pre>
       </div>
     </section>
 
-    <section class="card">
-      <h2>Fundamento recuperado (RAG)</h2>
-      {% for chunk in case.rag.retrieved_chunks %}
-        <details>
-          <summary>{{ chunk.rank }}. {{ chunk.source }} — {{ chunk.section }} <span class="muted">(coseno {{ chunk.score }})</span></summary>
-          <p>{{ chunk.excerpt }}</p>
-          <p class="hash">{{ chunk.chunk_id }} · SHA-256 {{ chunk.sha256 }}</p>
-        </details>
-      {% else %}
-        <p class="muted">Sin fragmentos recuperados.</p>
-      {% endfor %}
+    <section class="card" aria-labelledby="rag-title">
+      <div class="card-header">
+        <h2 id="rag-title">Fundamento recuperado (RAG)</h2>
+        <span class="meta">{{ case.rag.method }}</span>
+      </div>
+      <div class="card-body flush">
+        {% for chunk in case.rag.retrieved_chunks %}
+          <details class="disclosure">
+            <summary><span>{{ chunk.rank }}. {{ chunk.section }} <span class="muted">· {{ chunk.source }}</span></span><span class="badge plain tone-neutral">coseno {{ '%.3f'|format(chunk.score) }}</span></summary>
+            <div class="disclosure-body stack-sm">
+              <p class="text-sm">{{ chunk.excerpt }}</p>
+              <p class="hash">{{ chunk.chunk_id }} · SHA-256 {{ chunk.sha256 }}</p>
+            </div>
+          </details>
+        {% else %}
+          <div class="card-body"><p class="muted">Sin fragmentos recuperados.</p></div>
+        {% endfor %}
+      </div>
     </section>
   </div>
 
-  <div>
-    <section class="card">
-      <h2>Expediente</h2>
-      <dl class="kv">
-        <dt>Recibida</dt><dd>{{ case.received_at }}</dd>
-        <dt>Política</dt><dd>{{ case.policy.policy_id }} ({{ case.policy.response_days }} días)</dd>
-        <dt>Identidad</dt><dd>{{ case.identity_verification.status }}{% if case.identity_verification.method %} · {{ case.identity_verification.method }}{% endif %}</dd>
-        <dt>Sistemas</dt><dd>{{ case.source_systems|join(', ') or '—' }}</dd>
-      </dl>
-      <p class="muted" style="margin-bottom:4px">Texto del titular (dato no confiable):</p>
-      <pre>{{ dsar_request.request_text or '—' }}</pre>
+  <aside class="stack">
+    <section class="card" aria-labelledby="file-title">
+      <div class="card-header"><h2 id="file-title">Expediente</h2></div>
+      <div class="card-body stack-sm">
+        <dl class="dl">
+          <dt>Recibida</dt><dd>{{ case.received_at }}</dd>
+          <dt>Política</dt><dd>{{ case.policy.policy_id }} · {{ case.policy.response_days }} días</dd>
+          <dt>Identidad</dt><dd>{{ 'Verificada' if case.identity_verification.status == 'verified' else 'Pendiente' }}{% if case.identity_verification.method %} · {{ case.identity_verification.method }}{% endif %}</dd>
+          <dt>Sistemas</dt><dd>{{ case.source_systems|join(', ') or '—' }}</dd>
+        </dl>
+        <p class="label mt-4">Texto del titular <span class="muted">(dato no confiable)</span></p>
+        <div class="quote">{{ dsar_request.request_text or '—' }}</div>
+      </div>
     </section>
 
     {% if case.approvals %}
-    <section class="card">
-      <h2>Decisiones firmadas</h2>
-      {% for item in case.approvals %}
-        <p><strong>{{ 'Aprobado' if item.decision == 'approve' else 'Rechazado' }}</strong> por {{ item.approver }} ({{ item.role }})<br>
-          <span class="muted">{{ item.decided_at }}</span><br>{{ item.comment }}</p>
-        <p class="hash">SHA-256 {{ item.decision_sha256 }}</p>
-      {% endfor %}
+    <section class="card" aria-labelledby="dec-title">
+      <div class="card-header"><h2 id="dec-title">Decisiones firmadas</h2></div>
+      <div class="card-body stack-sm">
+        {% for item in case.approvals %}
+          <div>
+            <span class="badge plain {{ 'tone-success' if item.decision == 'approve' else 'tone-danger' }}">{{ 'Aprobado' if item.decision == 'approve' else 'Rechazado' }}</span>
+            <p class="text-sm mt-2"><strong>{{ item.approver }}</strong> · {{ item.role }}</p>
+            <p class="muted text-sm">{{ item.decided_at|fmt_dt }}</p>
+            <p class="text-sm mt-2">{{ item.comment }}</p>
+            <p class="hash mt-2" title="{{ item.decision_sha256 }}">SHA-256 {{ item.decision_sha256 }}</p>
+          </div>
+        {% endfor %}
+      </div>
     </section>
     {% endif %}
 
     {% if case.execution %}
-    <section class="card">
-      <h2>Ejecución simulada</h2>
-      <p>{{ case.execution.summary }}</p>
-      <p class="muted">{{ case.execution.executed_at }} · {{ case.execution.actor }}</p>
+    <section class="card" aria-labelledby="exec-title">
+      <div class="card-header"><h2 id="exec-title">Ejecución simulada</h2></div>
+      <div class="card-body stack-sm">
+        <p class="text-sm">{{ case.execution.summary }}</p>
+        <p class="muted text-sm">{{ case.execution.executed_at|fmt_dt }} · {{ case.execution.actor }}</p>
+      </div>
     </section>
     {% endif %}
 
     {% if case.coordination %}
-    <section class="card">
-      <h2>Coordinación de agentes</h2>
-      <ul class="timeline">
-        {% for step in case.coordination %}
-          <li><strong class="mono">{{ step.agent }}</strong><br>{{ step.description }}</li>
-        {% endfor %}
-      </ul>
+    <section class="card" aria-labelledby="coord-title">
+      <div class="card-header"><h2 id="coord-title">Coordinación de agentes</h2></div>
+      <div class="card-body">
+        <ol class="timeline">
+          {% for step in case.coordination %}
+            <li><div class="t-title mono">{{ step.agent }}</div><div class="t-text">{{ step.description }}</div></li>
+          {% endfor %}
+        </ol>
+      </div>
     </section>
     {% endif %}
 
-    <section class="card">
-      <h2>Registro de auditoría</h2>
-      <ul class="timeline">
-        {% for item in case.audit_trail %}
-          <li><strong>{{ item.sequence }}. {{ item.state }}</strong><br>{{ item.description }}
-            {% if item.actor %}<br><span class="muted">{{ item.actor }} · {{ item.timestamp }}</span>{% endif %}</li>
-        {% endfor %}
-      </ul>
+    <section class="card" aria-labelledby="audit-title">
+      <div class="card-header"><h2 id="audit-title">Registro de auditoría</h2><span class="meta">{{ case.audit_trail|length }} eventos</span></div>
+      <div class="card-body">
+        <ol class="timeline">
+          {% for item in case.audit_trail %}
+            <li>
+              <div class="t-title">{{ STATUS_LABELS.get(item.state, item.state) }}</div>
+              <div class="t-text">{{ item.description }}</div>
+              {% if item.actor %}<div class="t-meta">{{ item.actor }} · {{ item.timestamp|fmt_dt }}</div>{% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>Evidencia del caso</h2>
-      {% for entry in evidence %}
-        <p><strong>{{ entry.event_type }}</strong> <span class="muted">#{{ entry.sequence }} · {{ entry.recorded_at }}</span><br>
-          <span class="hash">{{ entry.entry_hash }}</span></p>
-      {% else %}
-        <p class="muted">Sin entradas.</p>
-      {% endfor %}
-      <a href="/evidencia">Ver cadena completa</a>
+    <section class="card" aria-labelledby="ev-title">
+      <div class="card-header"><h2 id="ev-title">Evidencia del caso</h2><a class="text-sm" href="/evidencia">Cadena completa</a></div>
+      <div class="card-body">
+        <ol class="timeline">
+          {% for entry in evidence %}
+            <li><div class="t-title">{{ entry.event_type }}</div><div class="t-meta">#{{ entry.sequence }} · {{ entry.recorded_at|fmt_dt }}</div><div class="hash" title="{{ entry.entry_hash }}">{{ entry.entry_hash|short_hash }}</div></li>
+          {% else %}
+            <li class="muted">Sin entradas.</li>
+          {% endfor %}
+        </ol>
+      </div>
     </section>
-  </div>
+  </aside>
 </div>
 {% endblock %}

@@ -1,9 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Error · Agente DSAR{% endblock %}
+{% import "_ui.html" as ui with context %}
+{% block title %}No disponible{% endblock %}
 {% block content %}
-<h1>No disponible</h1>
-<div class="card">
-  <p>{{ message }}</p>
-  <a class="btn secondary" href="/">Volver a la bandeja</a>
-</div>
+<section class="card">
+  <div class="empty">
+    <span class="kpi-icon tone-warning">{{ ui.icon("alert", "icon-lg") }}</span>
+    <h3>No disponible</h3>
+    <p>{{ message }}</p>
+    <a class="btn btn-secondary" href="/">{{ ui.icon("back") }}Volver a la bandeja</a>
+  </div>
+</section>
 {% endblock %}

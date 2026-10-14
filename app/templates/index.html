@@ -1,48 +1,77 @@
 {% set nav = "inbox" %}
 {% extends "base.html" %}
-{% block title %}Bandeja de casos · Agente DSAR{% endblock %}
+{% import "_ui.html" as ui with context %}
+{% block title %}Bandeja de casos{% endblock %}
 {% block content %}
-<h1>Bandeja de casos</h1>
-<p class="subtitle">Solicitudes de derechos registradas por el orquestador y su estado en el flujo con aprobación humana.</p>
+<header class="page-header">
+  <div>
+    <h1>Bandeja de casos</h1>
+    <p class="lead">Solicitudes de derechos coordinadas por el orquestador y su avance en el flujo con aprobación humana.</p>
+  </div>
+  <a class="btn btn-primary" href="/solicitudes/nueva">{{ ui.icon("plus") }}Nueva solicitud</a>
+</header>
 
-<div class="grid stats">
-  <div class="card stat"><div class="value">{{ cases|length }}</div><div class="label">Casos registrados</div></div>
-  <div class="card stat"><div class="value">{{ pending_hitl }}</div><div class="label">Esperan decisión humana</div></div>
-  <div class="card stat"><div class="value">{{ due_soon }}</div><div class="label">Abiertos que vencen en 5 días o menos</div></div>
-  <div class="card stat"><div class="value">{{ counts.get('CLOSED', 0) }}</div><div class="label">Cerrados</div></div>
-</div>
+<section class="kpi-grid" aria-label="Resumen">
+  <div class="card kpi">
+    <span class="kpi-icon tone-info">{{ ui.icon("inbox", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ total }}</div><div class="kpi-label">Casos registrados</div></div>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-icon tone-warning">{{ ui.icon("users", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ pending_hitl }}</div><div class="kpi-label">Esperan decisión humana</div></div>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-icon {{ 'tone-danger' if overdue else 'tone-neutral' }}">{{ ui.icon("clock", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ overdue }}</div><div class="kpi-label">Plazos vencidos</div><div class="kpi-sub">{{ due_soon }} vencen en 5 días o menos</div></div>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-icon tone-success">{{ ui.icon("check", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ closed }}</div><div class="kpi-label">Casos cerrados</div></div>
+  </div>
+</section>
 
-<div class="card">
-  {% if cases %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Caso</th><th>Titular</th><th>Derecho</th><th>Estado</th><th>Recibida</th><th>Fecha límite</th><th>HITL</th></tr>
-      </thead>
-      <tbody>
-      {% for item in cases %}
-        <tr>
-          <td><a href="/casos/{{ item.case_id }}">{{ item.case_id }}</a></td>
-          <td class="mono">{{ item.principal_id }}</td>
-          <td>{{ RIGHT_LABELS.get(item.request_type, item.request_type) }}</td>
-          <td><span class="pill status-{{ item.status|lower }}">{{ STATUS_LABELS.get(item.status, item.status) }}</span></td>
-          <td>{{ item.received_at }}</td>
-          <td>
-            {{ item.deadline_at }}
-            {% if item.status != 'CLOSED' %}
-              <div class="{{ 'late' if item.days_left <= 5 else 'muted' }}">
-                {% if item.days_left < 0 %}Vencido hace {{ -item.days_left }} días{% else %}{{ item.days_left }} días restantes{% endif %}
-              </div>
-            {% endif %}
-          </td>
-          <td>{{ 'Sí' if item.hitl.required else 'No' }}</td>
-        </tr>
+<section class="card">
+  <div class="toolbar">
+    <nav class="chips" aria-label="Filtrar casos">
+      {% for item in filters %}
+        <a class="chip" href="/?filtro={{ item.key }}" {% if item.key == active_filter %}aria-current="true"{% endif %}>
+          {{ item.label }}<span class="count">{{ item.count }}</span>
+        </a>
       {% endfor %}
-      </tbody>
-    </table>
+    </nav>
+  </div>
+  {% if cases %}
+  <table class="table responsive">
+    <thead>
+      <tr><th scope="col">Caso</th><th scope="col">Derecho</th><th scope="col">Titular</th><th scope="col">Estado</th><th scope="col">Recibida</th><th scope="col">Fecha límite</th><th scope="col">HITL</th></tr>
+    </thead>
+    <tbody>
+    {% for item in cases %}
+      <tr>
+        <td class="cell-primary" data-label="Caso"><a class="row-link" href="/casos/{{ item.case_id }}">{{ item.case_id }}</a></td>
+        <td data-label="Derecho">{{ RIGHT_LABELS.get(item.request_type, item.request_type) }}</td>
+        <td data-label="Titular"><span class="mono">{{ item.principal_id }}</span></td>
+        <td data-label="Estado">{{ ui.status_badge(item.status) }}</td>
+        <td data-label="Recibida">{{ item.received_at }}</td>
+        <td data-label="Fecha límite"><span>{{ item.deadline_at }}{{ ui.deadline(item, item.days_left) }}</span></td>
+        <td data-label="HITL">{% if item.hitl.required %}<span class="badge plain tone-warning">Requerido</span>{% else %}<span class="muted">Ordinario</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% elif total %}
+  <div class="empty">
+    <h3>No hay casos con este filtro</h3>
+    <p>Pruebe con otro filtro para ver más solicitudes.</p>
+    <a class="btn btn-secondary" href="/">Ver todos</a>
   </div>
   {% else %}
-  <p class="muted">Todavía no hay casos. <a href="/solicitudes/nueva">Registre una solicitud</a> para empezar.</p>
+  <div class="empty">
+    <span class="kpi-icon tone-info">{{ ui.icon("inbox", "icon-lg") }}</span>
+    <h3>Todavía no hay casos</h3>
+    <p>Registre una solicitud ficticia para iniciar el Flujo 3.</p>
+    <a class="btn btn-primary" href="/solicitudes/nueva">{{ ui.icon("plus") }}Registrar solicitud</a>
+  </div>
   {% endif %}
-</div>
+</section>
 {% endblock %}

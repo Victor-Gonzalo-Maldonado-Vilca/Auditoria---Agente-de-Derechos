@@ -1,42 +1,55 @@
 {% set nav = "evidence" %}
 {% extends "base.html" %}
-{% block title %}Evidencia · Agente DSAR{% endblock %}
+{% import "_ui.html" as ui with context %}
+{% block title %}Evidencia{% endblock %}
 {% block content %}
-<h1>Registro de evidencia</h1>
-<p class="subtitle">Agente de Evidencia simulado: registro de solo anexado donde cada entrada guarda la huella de la anterior.</p>
-
-<div class="card">
-  {% if verification.valid %}
-    <div class="flash ok" style="margin:0">Cadena íntegra: {{ verification.entries }} entradas verificadas.</div>
-  {% else %}
-    <div class="flash error" style="margin:0">
-      Cadena alterada:
-      <ul class="reasons">{% for item in verification.errors %}<li>{{ item }}</li>{% endfor %}</ul>
-    </div>
-  {% endif %}
-</div>
-
-<div class="card">
-  {% if entries %}
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>#</th><th>Caso</th><th>Evento</th><th>Estado</th><th>Fecha</th><th>Huellas</th></tr></thead>
-      <tbody>
-      {% for entry in entries %}
-        <tr>
-          <td>{{ entry.sequence }}</td>
-          <td><a href="/casos/{{ entry.case_id }}">{{ entry.case_id }}</a></td>
-          <td>{{ entry.event_type }}</td>
-          <td>{{ entry.payload.status }}</td>
-          <td>{{ entry.recorded_at }}</td>
-          <td><div class="hash">entrada {{ entry.entry_hash }}</div><div class="hash">anterior {{ entry.prev_hash }}</div></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+<header class="page-header">
+  <div>
+    <h1>Registro de evidencia</h1>
+    <p class="lead">Agente de Evidencia simulado: registro de solo anexado donde cada entrada guarda la huella de la anterior. Solo almacena estados y huellas, nunca PII.</p>
   </div>
+  <a class="btn btn-secondary" href="/api/evidence/verify">{{ ui.icon("code") }}Verificar vía API</a>
+</header>
+
+<section class="card mb-6">
+  <div class="integrity">
+    {% if verification.valid %}
+      <span class="kpi-icon tone-success">{{ ui.icon("shield", "icon-lg") }}</span>
+      <div><h2>Cadena íntegra</h2><p class="muted text-sm">{{ verification.entries }} entradas verificadas: secuencia, encadenamiento y huellas coinciden.</p></div>
+    {% else %}
+      <span class="kpi-icon tone-danger">{{ ui.icon("alert", "icon-lg") }}</span>
+      <div>
+        <h2>Cadena alterada</h2>
+        <ul class="text-sm">{% for item in verification.errors %}<li>{{ item }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Entradas</h2><span class="meta">Más recientes primero</span></div>
+  {% if entries %}
+  <table class="table responsive">
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Caso</th><th scope="col">Evento</th><th scope="col">Estado</th><th scope="col">Fecha</th><th scope="col">Huella / anterior</th></tr></thead>
+    <tbody>
+    {% for entry in entries %}
+      <tr>
+        <td class="cell-primary num" data-label="#">#{{ entry.sequence }}</td>
+        <td data-label="Caso"><a class="row-link" href="/casos/{{ entry.case_id }}">{{ entry.case_id }}</a></td>
+        <td data-label="Evento"><span class="mono">{{ entry.event_type }}</span></td>
+        <td data-label="Estado">{{ ui.status_badge(entry.payload.status) }}</td>
+        <td data-label="Fecha">{{ entry.recorded_at|fmt_dt }}</td>
+        <td data-label="Huella"><span><span class="hash" title="{{ entry.entry_hash }}">{{ entry.entry_hash|short_hash }}</span><span class="cell-sub hash" title="{{ entry.prev_hash }}">← {{ entry.prev_hash|short_hash }}</span></span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
   {% else %}
-    <p class="muted">Todavía no hay evidencia registrada.</p>
+  <div class="empty">
+    <span class="kpi-icon tone-neutral">{{ ui.icon("lock", "icon-lg") }}</span>
+    <h3>Todavía no hay evidencia</h3>
+    <p>Cada solicitud y cada decisión agregan una entrada a la cadena.</p>
+  </div>
   {% endif %}
-</div>
+</section>
 {% endblock %}
