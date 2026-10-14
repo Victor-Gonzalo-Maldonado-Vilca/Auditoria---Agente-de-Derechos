@@ -1,0 +1,13 @@
+{
+  "request_id": "DSAR-DEMO-001",
+  "principal_id": "person-001",
+  "request_type": "access",
+  "received_at": "2026-10-01",
+  "policy_id": "LAB-30",
+  "request_text": "Quiero conocer los datos personales que mantienen sobre mi.",
+  "identity_verification": {
+    "status": "verified",
+    "method": "portal-demo",
+    "reference": "verification-demo-001"
+  }
+}

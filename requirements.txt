@@ -1,0 +1,2 @@
+# El simulador usa solo la biblioteca estandar de Python.
+# Este archivo mantiene reproducible el paso de configuracion del entorno.

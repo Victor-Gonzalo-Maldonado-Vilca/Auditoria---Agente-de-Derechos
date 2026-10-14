@@ -1,0 +1,13 @@
+{
+  "request_id": "DSAR-DEMO-003",
+  "principal_id": "person-001",
+  "request_type": "erasure",
+  "received_at": "2026-10-01",
+  "policy_id": "LAB-15-REVIEW",
+  "request_text": "Solicito la eliminacion de mis datos.",
+  "identity_verification": {
+    "status": "verified",
+    "method": "portal-demo",
+    "reference": "verification-demo-003"
+  }
+}

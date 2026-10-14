@@ -1,0 +1,42 @@
+[
+  {
+    "principal_id": "person-001",
+    "record_id": "crm-001",
+    "source_system": "crm-demo",
+    "category": "contact",
+    "sensitive": false,
+    "data": {
+      "name": "Persona Demostracion",
+      "email": "persona@example.test",
+      "manager_email": "tercero@example.test"
+    },
+    "third_party_fields": ["manager_email"],
+    "restrictions": []
+  },
+  {
+    "principal_id": "person-001",
+    "record_id": "health-001",
+    "source_system": "benefits-demo",
+    "category": "health",
+    "sensitive": true,
+    "data": {
+      "program": "Programa ficticio de bienestar",
+      "status": "activo"
+    },
+    "third_party_fields": [],
+    "restrictions": ["Revisar politica de conservacion antes de cualquier supresion"]
+  },
+  {
+    "principal_id": "person-002",
+    "record_id": "crm-002",
+    "source_system": "crm-demo",
+    "category": "contact",
+    "sensitive": false,
+    "data": {
+      "name": "Otra Persona",
+      "email": "otra@example.test"
+    },
+    "third_party_fields": [],
+    "restrictions": []
+  }
+]

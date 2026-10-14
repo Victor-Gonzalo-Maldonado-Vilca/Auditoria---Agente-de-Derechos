@@ -1,0 +1,100 @@
+{
+  "case_id": "DSAR-DEMO-001",
+  "principal_id": "person-001",
+  "request_type": "access",
+  "received_at": "2026-10-01",
+  "policy": {
+    "policy_id": "LAB-30",
+    "label": "Politica academica de 30 dias",
+    "response_days": 30,
+    "disclaimer": "Configuracion ficticia para la demostracion; no constituye un plazo legal."
+  },
+  "deadline_at": "2026-10-31",
+  "identity_verification": {
+    "status": "verified",
+    "method": "portal-demo",
+    "reference": "verification-demo-001"
+  },
+  "status": "APPROVAL_REQUIRED",
+  "discovered_records": [
+    {
+      "record_id": "crm-001",
+      "source_system": "crm-demo",
+      "category": "contact",
+      "sensitive": false,
+      "data": {
+        "name": "Persona Demostracion",
+        "email": "persona@example.test"
+      },
+      "redacted_fields": [
+        "manager_email"
+      ],
+      "restrictions": []
+    },
+    {
+      "record_id": "health-001",
+      "source_system": "benefits-demo",
+      "category": "health",
+      "sensitive": true,
+      "data": {
+        "program": "Programa ficticio de bienestar",
+        "status": "activo"
+      },
+      "redacted_fields": [],
+      "restrictions": [
+        "Revisar politica de conservacion antes de cualquier supresion"
+      ]
+    }
+  ],
+  "source_systems": [
+    "benefits-demo",
+    "crm-demo"
+  ],
+  "hitl": {
+    "required": true,
+    "reasons": [
+      "El expediente contiene categorias marcadas como sensibles.",
+      "Se detectaron campos de terceros que requieren revision.",
+      "Existen restricciones o conflictos de retencion pendientes de evaluar."
+    ]
+  },
+  "proposed_action": {
+    "type": "access",
+    "description": "Preparar una copia revisada de la PII localizada.",
+    "executed": false
+  },
+  "audit_trail": [
+    {
+      "sequence": 1,
+      "state": "RECEIVED",
+      "description": "Solicitud registrada."
+    },
+    {
+      "sequence": 2,
+      "state": "TRIAGED",
+      "description": "Derecho y politica clasificados."
+    },
+    {
+      "sequence": 3,
+      "state": "VERIFIED",
+      "description": "Verificacion externa confirmada."
+    },
+    {
+      "sequence": 4,
+      "state": "DISCOVERY",
+      "description": "Se localizaron 2 registros sinteticos."
+    },
+    {
+      "sequence": 5,
+      "state": "APPROVAL_REQUIRED",
+      "description": "El caso requiere decision humana."
+    }
+  ],
+  "source_hashes": {
+    "request": "4cc05d66de51a4361b25a4e8aa95e7c8dcdc2745223c001d537c300137396666",
+    "data": "0f6c5b25ded6e130c9a65a238afee6b2b532faa721e811fc32e85ab17f768fcc",
+    "policies": "b3f4b697ce355e715f96604acf6e710b5d10d30e73a81091259f5dd14ec334e1"
+  },
+  "generated_at": "2026-10-02T04:49:47+00:00",
+  "disclaimer": "Demostracion academica con datos sinteticos. No ejecuta cambios, no envia comunicaciones y no constituye asesoramiento legal."
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agente de Derechos DSAR"
+  short_description: "Gestiona solicitudes de derechos con trazabilidad"
+  default_prompt: "Usa $dsar-rights para analizar y tramitar una solicitud DSAR ficticia con controles ISO 27701."
