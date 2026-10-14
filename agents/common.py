@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = PROJECT_ROOT / "skills" / "dsar-rights" / "scripts"
 RAG_PATH = PROJECT_ROOT / "rag" / "dsar_rag.py"
 LLM_PATH = PROJECT_ROOT / "llm" / "dsar_llm.py"
+CLAUDE_PATH = PROJECT_ROOT / "llm" / "claude_agent.py"
 DATA_DIR = PROJECT_ROOT / "data"
 
 
@@ -34,6 +35,7 @@ ENGINE = LIFECYCLE.engine
 VALIDATOR = load_module("dsar_case_validator", SCRIPTS_DIR / "validate_case.py")
 RAG = load_module("dsar_rag_retriever", RAG_PATH)
 LLM = load_module("dsar_llm_assistant", LLM_PATH)
+CLAUDE = load_module("dsar_claude_agent", CLAUDE_PATH)
 
 
 def read_json(path: Path) -> Any:

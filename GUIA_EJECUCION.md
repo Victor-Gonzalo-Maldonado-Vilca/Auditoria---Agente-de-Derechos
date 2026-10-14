@@ -5,7 +5,7 @@
 - Windows 10/11 con PowerShell, o Linux/macOS con bash.
 - Python 3.10 o superior (`python` en Windows, `python3` en Linux/macOS).
 
-El motor, el RAG y el simulador de consola usan solamente la biblioteca estandar de Python. La interfaz web necesita las dependencias de `requirements.txt` (FastAPI, Uvicorn, Jinja2 y python-multipart). No hace falta base de datos: los casos se guardan en archivos JSON. Sin clave de API todo funciona sin internet; con una clave de Gemini se activa el asistente de IA y, si Claude Code esta instalado, el agente Claude (seccion "Inteligencia artificial").
+El motor, el RAG y el simulador de consola usan solamente la biblioteca estandar de Python. La interfaz web necesita las dependencias de `requirements.txt` (FastAPI, Uvicorn, Jinja2 y python-multipart). No hace falta base de datos: los casos se guardan en archivos JSON. Sin clave de API todo funciona sin internet; con una clave de Gemini se activa el asistente de IA y, si Claude Code esta instalado, el agente Claude (ver "Inteligencia artificial en la web" y las secciones 6 y 7).
 
 El proyecto incorpora un RAG vectorial local basico. Genera embeddings TF-IDF de unigramas y bigramas, los conserva en `rag/vector_store.json`, recupera por similitud coseno y registra los fragmentos con su procedencia y huella SHA-256.
 
@@ -89,14 +89,35 @@ El archivo `render.yaml` define un Web Service gratuito:
 
 En el plan gratuito el disco es efimero: los casos de `data/runtime/` se pierden cuando el servicio se reinicia o se suspende por inactividad. Para la demostracion basta con volver a registrar las solicitudes.
 
-### Integracion futura del LLM
+### Inteligencia artificial en la web
 
-El LLM se integra en una fase posterior. `Orchestrator` ya acepta dos puntos de extension opcionales:
+La interfaz integra dos modelos. Ninguno decide el estado, la identidad, la redaccion de terceros ni la aprobacion humana: proponen y una persona confirma o elige.
 
-- `classifier(texto) -> request_type`: se usa solo si la solicitud llega sin `request_type`.
-- `drafter(expediente) -> markdown`: reemplaza la plantilla determinista al redactar o enviar la respuesta.
+| Modelo | Donde aparece | Que hace | Que recibe |
+|---|---|---|---|
+| **Gemini** (asistente) | Boton **Sugerir derecho con IA** en *Nueva solicitud* | Propone el derecho a partir del texto; usted lo confirma o lo corrige antes de registrar. | Solo el texto de la solicitud. |
+| **Gemini** (asistente) | Boton **Redactar con Gemini** en el caso | Redacta un borrador citando los fragmentos del RAG. | Hechos minimizados, sin valores de PII. |
+| **Claude** (agente) | Boton **Redactar con Claude (agente)** en el caso | Ejecuta Claude Code con herramientas de solo lectura: lee el expediente, el skill y las referencias ISO por su cuenta y redacta. | El expediente (datos ficticios). |
 
-Lo que proponga el LLM sigue pasando por el validador y por la aprobacion humana; no puede ejecutar ni enviar nada por si mismo. Otra opcion es que el agente LLM consuma la API REST como cliente.
+Al **enviar la respuesta**, el campo *Texto a enviar* permite elegir la plantilla del motor o uno de los borradores de IA. El texto elegido se congela con su huella SHA-256 y el validador comprueba que coincide con el borrador original.
+
+El expediente registra todo: sugerencia de la IA, derecho confirmado y si se acepto o corrigio (`llm.classification`), cada borrador con proveedor, modelo, autor, estado en que se genero y huella (`ai_drafts`), y el borrador enviado (`outbox.source`). Cada borrador agrega ademas un evento al registro de auditoria y a la cadena de evidencia (`AI_DRAFT_GENERATED`).
+
+Para activarlos, en la misma terminal antes de iniciar la aplicacion:
+
+```powershell
+$env:GEMINI_API_KEY = "su clave de Google AI Studio"
+.\scripts\run_app.ps1
+```
+
+Claude se detecta automaticamente si el comando `claude` (Claude Code) esta instalado y con sesion iniciada; usa la suscripcion de la persona, por lo que solo funciona en el equipo local, no en Render. Variables opcionales: `LLM_MODEL` (modelo de Gemini), `CLAUDE_MODEL` (modelo de Claude), `CLAUDE_CLI` (ruta del ejecutable) y `CLAUDE_AGENT=0` para desactivarlo. Sin clave ni Claude Code, la aplicacion funciona igual y los botones aparecen desactivados con la indicacion de que falta.
+
+| Metodo y ruta | Accion |
+|---|---|
+| `GET /api/assist/status` | Modelos disponibles. |
+| `POST /api/assist/classify` | Sugerencia de derecho (`request_text`); devuelve un `token` para enviar en `POST /api/requests` como `ai_suggestion_token`. |
+| `POST /api/cases/{id}/drafts` | Borrador con IA (`provider`: `gemini` o `claude`, `actor`). |
+| `POST /api/cases/{id}/send` | Acepta `draft_source`: `plantilla` o el `draft_id` de un borrador. |
 
 ## 1. Abrir el proyecto
 
@@ -279,7 +300,7 @@ Get-ChildItem .\simulaciones -Recurse -Filter response-draft.md |
 Resultado esperado:
 
 ```text
-Ran 41 tests
+Ran 53 tests
 OK
 ```
 

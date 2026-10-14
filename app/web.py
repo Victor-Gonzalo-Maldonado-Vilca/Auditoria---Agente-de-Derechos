@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from agents.orchestrator import CaseInputError, CaseNotFound, Orchestrator
+from agents.orchestrator import AIUnavailable, CaseInputError, CaseNotFound, Orchestrator
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
@@ -140,6 +140,7 @@ def render(request: Request, name: str, context: dict[str, Any], status_code: in
         "msg": request.query_params.get("msg"),
         "error": request.query_params.get("error"),
         "actor": request.cookies.get("dsar_actor", ""),
+        "ai": orchestrator_of(request).ai_status(),
         **context,
     }
     return templates.TemplateResponse(request, name, context, status_code=status_code)
@@ -208,6 +209,9 @@ async def create_request(request: Request):
     received_at = str(form.get("received_at", "")).strip()
     if received_at:
         payload["received_at"] = received_at
+    token = str(form.get("ai_suggestion_token", "")).strip()
+    if token:
+        payload["ai_suggestion_token"] = token
     try:
         package = orchestrator_of(request).submit(payload)
     except CaseInputError as exc:
@@ -265,7 +269,10 @@ async def case_action(request: Request, case_id: str, action: str):
             orchestrator.fulfill(case_id, actor)
             message = "Ejecucion simulada registrada."
         elif action == "send":
-            orchestrator.send_response(case_id, actor, str(form.get("channel", "")))
+            orchestrator.send_response(
+                case_id, actor, str(form.get("channel", "")),
+                str(form.get("draft_source", "plantilla")),
+            )
             message = "Respuesta registrada en la bandeja de salida simulada."
         else:
             orchestrator.close(case_id, actor)
@@ -277,6 +284,24 @@ async def case_action(request: Request, case_id: str, action: str):
     response = redirect(f"/casos/{case_id}", msg=message)
     if actor:
         response.set_cookie("dsar_actor", actor, max_age=60 * 60 * 24 * 30, samesite="lax")
+    return response
+
+
+@router.post("/casos/{case_id}/borrador/{provider}")
+async def case_ai_draft(request: Request, case_id: str, provider: str):
+    form = await request.form()
+    actor = str(form.get("actor", "")).strip()
+    try:
+        draft = orchestrator_of(request).generate_ai_draft(case_id, provider, actor)
+    except CaseNotFound:
+        return render(request, "error.html", {"message": f"Caso no encontrado: {case_id}"}, 404)
+    except (AIUnavailable, CaseInputError) as exc:
+        return redirect(f"/casos/{case_id}", error=str(exc))
+    response = redirect(
+        f"/casos/{case_id}",
+        msg=f"Borrador generado por {draft['provider']}/{draft['model']}. Reviselo antes de elegirlo.",
+    )
+    response.set_cookie("dsar_actor", actor, max_age=60 * 60 * 24 * 30, samesite="lax")
     return response
 
 

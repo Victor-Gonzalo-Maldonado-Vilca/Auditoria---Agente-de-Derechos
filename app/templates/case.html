@@ -104,6 +104,12 @@
           <div class="field"><label class="label" for="s-actor">Responsable<span class="req">*</span></label><input class="input" id="s-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
           <div class="field"><label class="label" for="s-channel">Canal</label>
             <select class="select" id="s-channel" name="channel">{% for channel in CHANNELS %}<option>{{ channel }}</option>{% endfor %}</select></div>
+          <div class="field span-2"><label class="label" for="s-source">Texto a enviar</label>
+            <select class="select" id="s-source" name="draft_source">
+              <option value="plantilla">Plantilla del motor (determinista)</option>
+              {% for draft in case.ai_drafts or [] %}<option value="{{ draft.draft_id }}" {% if loop.last %}selected{% endif %}>{{ draft.provider }}/{{ draft.model }} · generado en estado {{ STATUS_LABELS.get(draft.status_at_generation, draft.status_at_generation) }}</option>{% endfor %}
+            </select>
+            <span class="help">Revise el borrador elegido: se congela con su huella SHA-256.</span></div>
         </div>
         <div class="form-actions mt-4"><button class="btn btn-primary" type="submit">{{ ui.icon("send") }}Enviar respuesta</button></div>
       </form>
@@ -167,12 +173,70 @@
       </div>
       <div class="card-body stack-sm">
         {% if case.outbox %}
-          <p class="muted text-sm">Enviada el {{ case.outbox.sent_at|fmt_dt }} por {{ case.outbox.actor }}</p>
+          <p class="muted text-sm">Enviada el {{ case.outbox.sent_at|fmt_dt }} por {{ case.outbox.actor }} · texto: {{ case.outbox.source or 'plantilla' }}</p>
           <p class="hash" title="{{ case.outbox.body_sha256 }}">SHA-256 {{ case.outbox.body_sha256 }}</p>
         {% endif %}
         <pre class="code-block">{{ draft }}</pre>
       </div>
     </section>
+
+    <section class="card" aria-labelledby="ai-title">
+      <div class="card-header">
+        <h2 id="ai-title">Borradores con IA</h2>
+        <span class="meta">Propuestas: no cambian el estado ni la decisión humana</span>
+      </div>
+      {% if not case.outbox %}
+      <form class="card-body ai-draft-form" method="post">
+        <p class="action-desc">
+          <strong>Gemini</strong> redacta con hechos minimizados (sin valores de datos personales).
+          <strong>Claude</strong> actúa como agente: lee el expediente y las referencias ISO con herramientas de solo lectura.
+        </p>
+        <div class="form-grid">
+          <div class="field span-2"><label class="label" for="ai-actor">Solicitado por<span class="req">*</span></label><input class="input" id="ai-actor" type="text" name="actor" value="{{ actor }}" required autocomplete="name"></div>
+        </div>
+        <div class="form-actions mt-4" style="justify-content:flex-start">
+          <button class="btn btn-secondary" type="submit" formaction="/casos/{{ case.case_id }}/borrador/gemini" {% if not ai.assistant %}disabled title="Defina GEMINI_API_KEY"{% endif %}
+                  data-busy="Gemini está redactando…">{{ ui.icon("file") }}Redactar con Gemini</button>
+          <button class="btn btn-secondary" type="submit" formaction="/casos/{{ case.case_id }}/borrador/claude" {% if not ai.claude %}disabled title="Claude Code no está instalado"{% endif %}
+                  data-busy="Claude está analizando el caso (puede tardar 1–2 min)…">{{ ui.icon("users") }}Redactar con Claude (agente)</button>
+        </div>
+        {% if not ai.assistant or not ai.claude %}
+        <p class="help mt-4">
+          {% if not ai.assistant %}Gemini desactivado: defina <code>GEMINI_API_KEY</code>. {% endif %}
+          {% if not ai.claude %}Claude desactivado: instale Claude Code e inicie sesión.{% endif %}
+        </p>
+        {% endif %}
+      </form>
+      {% endif %}
+      <div class="card-body flush">
+        {% for item in case.ai_drafts or [] %}
+          <details class="disclosure" {% if loop.last and not case.outbox %}open{% endif %}>
+            <summary><span>{{ item.provider }}/{{ item.model }} <span class="muted">· {{ item.generated_at|fmt_dt }} · {{ item.actor }}</span></span>
+              <span class="badge plain {{ 'tone-teal' if case.outbox and case.outbox.source == item.draft_id else 'tone-neutral' }}">{{ 'Enviado' if case.outbox and case.outbox.source == item.draft_id else STATUS_LABELS.get(item.status_at_generation, item.status_at_generation) }}</span></summary>
+            <div class="disclosure-body stack-sm">
+              <pre class="code-block">{{ item.body }}</pre>
+              <p class="hash">{{ item.draft_id }} · SHA-256 {{ item.body_sha256 }}</p>
+            </div>
+          </details>
+        {% else %}
+          <div class="card-body"><p class="muted">Aún no hay borradores generados con IA.</p></div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <script>
+    document.querySelectorAll(".ai-draft-form button[data-busy]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const form = button.form;
+        if (!form.reportValidity()) return;
+        event.preventDefault();
+        form.action = button.getAttribute("formaction");
+        form.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+        button.textContent = button.dataset.busy;
+        form.submit();
+      });
+    });
+    </script>
 
     <section class="card" aria-labelledby="rag-title">
       <div class="card-header">
@@ -204,6 +268,12 @@
           <dt>Política</dt><dd>{{ case.policy.policy_id }} · {{ case.policy.response_days }} días</dd>
           <dt>Identidad</dt><dd>{{ 'Verificada' if case.identity_verification.status == 'verified' else 'Pendiente' }}{% if case.identity_verification.method %} · {{ case.identity_verification.method }}{% endif %}</dd>
           <dt>Sistemas</dt><dd>{{ case.source_systems|join(', ') or '—' }}</dd>
+          {% if case.llm and case.llm.classification %}
+          {% set c = case.llm.classification %}
+          <dt>Triaje IA</dt><dd>{{ RIGHT_LABELS.get(c.suggested_right, 'sin sugerencia') }} ({{ c.confidence }}) → confirmado: {{ RIGHT_LABELS.get(c.final_right, c.final_right) }}
+            <span class="badge plain {{ 'tone-success' if c.accepted else 'tone-warning' }}">{{ 'aceptada' if c.accepted else 'corregida' }}</span>
+            <div class="muted text-sm">{{ case.llm.provider }}/{{ case.llm.model }}</div></dd>
+          {% endif %}
         </dl>
         <p class="label mt-4">Texto del titular <span class="muted">(dato no confiable)</span></p>
         <div class="quote">{{ dsar_request.request_text or '—' }}</div>

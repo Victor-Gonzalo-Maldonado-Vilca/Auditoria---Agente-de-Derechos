@@ -45,6 +45,16 @@
           <label class="label" for="request_text">Texto de la solicitud</label>
           <textarea class="textarea" id="request_text" name="request_text" placeholder="Ej.: Quiero conocer los datos personales que mantienen sobre mí."></textarea>
           <span class="help">Se guarda como dato no confiable: nunca se interpreta como instrucción.</span>
+          <input type="hidden" id="ai_suggestion_token" name="ai_suggestion_token" value="">
+          {% if ai.assistant %}
+          <div class="form-actions mt-4" style="justify-content:flex-start">
+            <button class="btn btn-secondary btn-sm" type="button" id="ai-suggest">{{ ui.icon("shield") }}Sugerir derecho con IA</button>
+            <span class="help">{{ ai.assistant.provider }}/{{ ai.assistant.model }} · solo recibe el texto</span>
+          </div>
+          <div id="ai-result" class="alert alert-inline tone-info mt-4" role="status" hidden></div>
+          {% else %}
+          <span class="help">Sugerencia con IA desactivada: defina <code>GEMINI_API_KEY</code> y reinicie la aplicación.</span>
+          {% endif %}
         </div>
         <div class="field span-2">
           <label class="switch">
@@ -77,7 +87,52 @@
         <li><strong>Agente de Evidencia</strong> registra el expediente en la cadena de hashes.</li>
         <li>El caso queda a la espera de la <strong>decisión del DPO</strong>.</li>
       </ol>
+      <p class="help mt-4">Si usa la sugerencia de IA, el derecho final lo confirma usted y el expediente registra si aceptó o corrigió la propuesta.</p>
     </div>
   </aside>
 </div>
+
+{% if ai.assistant %}
+<script>
+(() => {
+  const button = document.getElementById("ai-suggest");
+  const text = document.getElementById("request_text");
+  const token = document.getElementById("ai_suggestion_token");
+  const box = document.getElementById("ai-result");
+  const show = (message) => { box.textContent = message; box.hidden = false; };
+  text.addEventListener("input", () => {
+    if (token.value) { token.value = ""; show("El texto cambió: vuelva a pedir la sugerencia si la necesita."); }
+  });
+  button.addEventListener("click", async () => {
+    if (!text.value.trim()) { show("Escriba primero el texto de la solicitud."); return; }
+    const label = button.innerHTML;
+    button.disabled = true;
+    button.textContent = "Consultando al modelo…";
+    try {
+      const response = await fetch("/api/assist/classify", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({request_text: text.value}),
+      });
+      const data = await response.json();
+      if (!response.ok) { show(data.detail || "El modelo no respondió."); return; }
+      token.value = data.token;
+      if (!data.suggested_right) {
+        show("La IA no pudo identificar el derecho. Elíjalo manualmente.");
+        return;
+      }
+      const radio = document.querySelector(`input[name="request_type"][value="${data.suggested_right}"]`);
+      if (radio) radio.checked = true;
+      show(`La IA sugiere: ${data.label} (confianza ${data.confidence}). ${data.rationale} ` +
+           "Revise la selección de arriba: la decisión final es suya.");
+    } catch (error) {
+      show("No se pudo contactar con el servidor.");
+    } finally {
+      button.disabled = false;
+      button.innerHTML = label;
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

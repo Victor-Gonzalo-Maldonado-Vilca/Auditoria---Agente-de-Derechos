@@ -4,17 +4,21 @@ Coordinates the Rights agent (case engine and lifecycle), the simulated
 Inventory agent and the simulated Evidence agent. Every stored package is
 validated before it is persisted, and every step is recorded as evidence.
 
-Extension points for the future LLM integration:
-- `classifier(request_text) -> request_type`: used only when the request has
-  no explicit `request_type`. Its output is a proposal and still passes the
-  engine checks, the validator and the human approval gate.
-- `drafter(package) -> markdown`: replaces the deterministic template when the
-  response is drafted or sent. It never decides or executes anything.
+Language models plug in at three points, always as proposals:
+- `assistant` (Gemini/OpenRouter, `llm/dsar_llm.py`): suggests the right from
+  the free text and drafts responses from minimized facts.
+- `claude_agent` (Claude Code, `llm/claude_agent.py`): reads the case and the
+  skill references with read-only tools and drafts a response.
+- `classifier(request_text) -> request_type` and `drafter(package) -> markdown`:
+  generic hooks kept for other integrations.
+None of them changes the state, the identity gate or the HITL decision: every
+suggestion is confirmed by a person and every draft is chosen by a person.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import secrets
 import threading
 from datetime import date, datetime
@@ -22,9 +26,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agents.common import (
+    CLAUDE,
     DATA_DIR,
     ENGINE,
     LIFECYCLE,
+    LLM,
     RAG,
     VALIDATOR,
     build_rag_query,
@@ -38,12 +44,25 @@ from agents.store import CaseNotFound, CaseStore, check_case_id
 CaseInputError = ENGINE.CaseInputError
 TransitionError = LIFECYCLE.TransitionError
 
+ClaudeAgentError = CLAUDE.ClaudeAgentError
+TEMPLATE_SOURCE = "plantilla"
+SUGGESTION_LIMIT = 200
+
 __all__ = [
+    "AIUnavailable",
     "CaseInputError",
     "CaseNotFound",
     "Orchestrator",
     "TransitionError",
 ]
+
+
+class AIUnavailable(CaseInputError):
+    """Raised when a language model is not configured or fails to answer."""
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class Orchestrator:
@@ -55,6 +74,8 @@ class Orchestrator:
         runtime_dir: Path | None = None,
         classifier: Callable[[str], str] | None = None,
         drafter: Callable[[dict[str, Any]], str] | None = None,
+        assistant: Any = None,
+        claude_agent: Any = None,
     ) -> None:
         data_dir = Path(data_dir)
         runtime_dir = Path(runtime_dir) if runtime_dir else data_dir / "runtime"
@@ -66,7 +87,31 @@ class Orchestrator:
         self.evidence = EvidenceAgent(runtime_dir / "evidence_log.jsonl")
         self.classifier = classifier
         self.drafter = drafter or ENGINE.render_response
+        self.assistant = assistant
+        self.claude_agent = claude_agent
+        self._suggestions: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
+
+    @classmethod
+    def from_env(cls, **kwargs: Any) -> "Orchestrator":
+        """Orchestrator with the models configured in the environment, if any."""
+        return cls(
+            assistant=LLM.DsarAssistant.from_env(),
+            claude_agent=CLAUDE.ClaudeCodeAgent.from_env(),
+            **kwargs,
+        )
+
+    def ai_status(self) -> dict[str, Any]:
+        return {
+            "assistant": (
+                {"provider": self.assistant.provider, "model": self.assistant.model}
+                if self.assistant else None
+            ),
+            "claude": (
+                {"provider": self.claude_agent.provider, "executable": self.claude_agent.executable}
+                if self.claude_agent else None
+            ),
+        }
 
     # Consultas -----------------------------------------------------------
 
@@ -88,6 +133,135 @@ class Orchestrator:
             return package["outbox"]["body"]
         return self.drafter(package)
 
+    # Asistencia de IA ----------------------------------------------------
+
+    def suggest_right(self, request_text: str) -> dict[str, Any]:
+        """Ask the assistant for the right; the person confirms it on submit."""
+        if not self.assistant:
+            raise AIUnavailable("No hay un modelo configurado (defina GEMINI_API_KEY).")
+        text = request_text.strip()
+        if not text:
+            raise CaseInputError("Escriba el texto de la solicitud antes de pedir una sugerencia.")
+        calls_before = len(self.assistant.calls)
+        try:
+            suggestion = self.assistant.classify_request(text)
+        except LLM.LLMError as exc:
+            raise AIUnavailable(f"El modelo no respondio: {exc}") from exc
+        token = secrets.token_urlsafe(12)
+        with self._lock:
+            if len(self._suggestions) >= SUGGESTION_LIMIT:
+                self._suggestions.pop(next(iter(self._suggestions)))
+            self._suggestions[token] = {
+                **suggestion,
+                "provider": self.assistant.provider,
+                "model": self.assistant.model,
+                "text_sha256": sha256_text(text),
+                "calls": self.assistant.calls[calls_before:],
+            }
+        return {
+            "token": token,
+            "label": LLM.RIGHT_LABELS.get(suggestion["suggested_right"] or ""),
+            "provider": self.assistant.provider,
+            "model": self.assistant.model,
+            **suggestion,
+        }
+
+    def classification_metadata(
+        self, token: str | None, request: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        if not token:
+            return None
+        with self._lock:
+            suggestion = self._suggestions.pop(token, None)
+        if suggestion is None:
+            raise CaseInputError("La sugerencia de la IA expiro; solicitela de nuevo.")
+        if suggestion["text_sha256"] != sha256_text(str(request.get("request_text", "")).strip()):
+            raise CaseInputError(
+                "El texto cambio despues de la sugerencia de la IA; solicitela de nuevo."
+            )
+        final_right = request.get("request_type")
+        return {
+            "enabled": True,
+            "provider": suggestion["provider"],
+            "model": suggestion["model"],
+            "role": "Triaje asistido; la persona confirma el derecho antes de registrar.",
+            "data_minimization": "Solo se envio el texto de la solicitud, sin datos del inventario.",
+            "classification": {
+                "suggested_right": suggestion["suggested_right"],
+                "confidence": suggestion["confidence"],
+                "rationale": suggestion["rationale"],
+                "final_right": final_right,
+                "confirmed_by_human": True,
+                "accepted": suggestion["suggested_right"] == final_right,
+            },
+            "calls": suggestion["calls"],
+            "error": None,
+        }
+
+    def generate_ai_draft(self, case_id: str, provider: str, actor: str) -> dict[str, Any]:
+        """Draft a response with Gemini or Claude; the person chooses it on send."""
+        actor = LIFECYCLE.require_value(actor, "actor")
+        request, package = self.store.load(case_id)
+        if package.get("outbox"):
+            raise TransitionError("La respuesta de este caso ya fue enviada")
+        if provider == "gemini":
+            if not self.assistant:
+                raise AIUnavailable("No hay un modelo configurado (defina GEMINI_API_KEY).")
+            calls_before = len(self.assistant.calls)
+            try:
+                body = self.assistant.draft_response(package, str(request.get("request_text", "")))
+            except LLM.LLMError as exc:
+                raise AIUnavailable(f"El modelo no respondio: {exc}") from exc
+            model = self.assistant
+            markdown = LLM.render_ai_draft(package, body, model)
+            details = {
+                "data_minimization": "Hechos del expediente sin valores de PII.",
+                "calls": self.assistant.calls[calls_before:],
+            }
+        elif provider == "claude":
+            if not self.claude_agent:
+                raise AIUnavailable("Claude Code no esta instalado en este equipo.")
+            try:
+                body = self.claude_agent.draft_response(package)
+            except ClaudeAgentError as exc:
+                raise AIUnavailable(str(exc)) from exc
+            model = self.claude_agent
+            markdown = CLAUDE.render_agent_draft(package, body, model)
+            details = {
+                "data_minimization": (
+                    "Expediente completo con datos ficticios; herramientas de solo lectura."
+                ),
+                "run": dict(self.claude_agent.last_run),
+            }
+        else:
+            raise CaseInputError(f"Proveedor de IA no admitido: {provider}")
+
+        # The model runs outside the lock; the draft is attached to the latest state.
+        with self._lock:
+            request, package = self.store.load(case_id)
+            if package.get("outbox"):
+                raise TransitionError("La respuesta de este caso ya fue enviada")
+            updated = copy.deepcopy(package)
+            draft = {
+                "draft_id": f"{provider}-{len(updated.get('ai_drafts', [])) + 1}",
+                "provider": model.provider,
+                "model": model.model,
+                "generated_at": LIFECYCLE.now_iso(),
+                "actor": actor,
+                "status_at_generation": updated["status"],
+                "body": markdown,
+                "body_sha256": sha256_text(markdown),
+                **details,
+            }
+            updated.setdefault("ai_drafts", []).append(draft)
+            LIFECYCLE.append_event(
+                updated, updated["status"],
+                f"Borrador generado por {model.provider}/{model.model} (propuesta, no enviada).",
+                actor,
+            )
+            self.persist(request, updated, "AI_DRAFT_GENERATED")
+            return draft
+
     def available_actions(self, case_id: str) -> list[str]:
         return LIFECYCLE.available_actions(self.get_case(case_id))
 
@@ -101,6 +275,7 @@ class Orchestrator:
         )
         request.setdefault("received_at", date.today().isoformat())
         request.setdefault("request_text", "")
+        suggestion_token = request.pop("ai_suggestion_token", None)
         if not request.get("request_type") and self.classifier:
             request["request_type"] = self.classifier(request["request_text"])
             request["request_type_source"] = "classifier"
@@ -108,6 +283,7 @@ class Orchestrator:
             check_case_id(request["request_id"])
         except ValueError as exc:
             raise CaseInputError(str(exc)) from exc
+        llm = self.classification_metadata(suggestion_token, request)
 
         with self._lock:
             if self.store.exists(request["request_id"]):
@@ -145,6 +321,16 @@ class Orchestrator:
             coordination.append(
                 self.step(self.evidence.name, "Registrar solicitud y expediente.")
             )
+            if llm:
+                package["llm"] = llm
+                coordination.insert(
+                    1,
+                    self.step(
+                        f"{llm['provider']}/{llm['model']}",
+                        f"Sugerir derecho: {llm['classification']['suggested_right']} "
+                        f"(confirmado por la persona: {request['request_type']}).",
+                    ),
+                )
             package["coordination"] = coordination
             self.persist(request, package, "CASE_SUBMITTED")
             return package
@@ -182,12 +368,28 @@ class Orchestrator:
         return self.transition(case_id, "FULFILLED_SIMULATED", LIFECYCLE.fulfill, actor)
 
     def send_response(
-        self, case_id: str, actor: str, channel: str = "email-simulado"
+        self,
+        case_id: str,
+        actor: str,
+        channel: str = "email-simulado",
+        draft_source: str = TEMPLATE_SOURCE,
     ) -> dict[str, Any]:
-        return self.transition(
-            case_id, "RESPONSE_SENT_SIMULATED", LIFECYCLE.send_response,
-            actor, channel, self.drafter,
-        )
+        with self._lock:
+            request, package = self.store.load(case_id)
+            if draft_source == TEMPLATE_SOURCE:
+                render = self.drafter
+            else:
+                chosen = next(
+                    (item for item in package.get("ai_drafts", [])
+                     if item["draft_id"] == draft_source),
+                    None,
+                )
+                if chosen is None:
+                    raise CaseInputError(f"Borrador no encontrado: {draft_source}")
+                render = lambda _package: chosen["body"]  # noqa: E731
+            updated = LIFECYCLE.send_response(package, actor, channel, render)
+            updated["outbox"]["source"] = draft_source
+            return self.persist(request, updated, "RESPONSE_SENT_SIMULATED")
 
     def close(self, case_id: str, actor: str) -> dict[str, Any]:
         return self.transition(case_id, "CASE_CLOSED", LIFECYCLE.close, actor)

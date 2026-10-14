@@ -66,7 +66,9 @@ DRAFT_SYSTEM = (
     "Eres el redactor del Agente de Derechos DSAR. Redacta en espanol un borrador formal "
     "y breve dirigido al titular, en Markdown, usando exclusivamente los hechos JSON "
     "proporcionados. Reglas obligatorias: no inventes datos, plazos, sistemas, "
-    "aprobaciones ni acciones; no afirmes que se ejecuto ninguna accion; si el estado es "
+    "aprobaciones ni acciones; no afirmes que se ejecuto una accion salvo que "
+    "action_executed sea true, y en ese caso aclara que fue simulada; si hay decisiones "
+    "humanas registradas, comunicalas sin nombrar a las personas; si el estado es "
     "IDENTITY_PENDING explica que se requiere completar la verificacion por el canal "
     "autorizado; si hay revision humana pendiente indicalo; cuando uses el contexto "
     "normativo cita el identificador del fragmento entre corchetes, por ejemplo "
@@ -250,6 +252,11 @@ def minimized_facts(package: dict[str, Any]) -> dict[str, Any]:
         "human_review_reasons": package["hitl"]["reasons"],
         "proposed_action": package["proposed_action"]["description"],
         "action_executed": package["proposed_action"]["executed"],
+        "human_decisions": [
+            {"decision": item["decision"], "role": item["role"], "comment": item["comment"]}
+            for item in package.get("approvals", [])
+        ],
+        "execution_summary": (package.get("execution") or {}).get("summary"),
         "normative_context": [
             {"chunk_id": item["chunk_id"], "source": item["source"], "excerpt": item["excerpt"]}
             for item in package.get("rag", {}).get("retrieved_chunks", [])

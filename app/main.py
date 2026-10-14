@@ -13,7 +13,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from agents.orchestrator import CaseInputError, CaseNotFound, Orchestrator, TransitionError
+from agents.orchestrator import (
+    AIUnavailable,
+    CaseInputError,
+    CaseNotFound,
+    Orchestrator,
+    TransitionError,
+)
 from app import api, web
 
 APP_DIR = Path(__file__).resolve().parent
@@ -28,7 +34,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         ),
         version="0.2.0",
     )
-    app.state.orchestrator = orchestrator or Orchestrator()
+    app.state.orchestrator = orchestrator or Orchestrator.from_env()
 
     @app.exception_handler(CaseNotFound)
     async def not_found(_: Request, exc: CaseNotFound) -> JSONResponse:
@@ -37,6 +43,10 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     @app.exception_handler(TransitionError)
     async def invalid_transition(_: Request, exc: TransitionError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(AIUnavailable)
+    async def ai_unavailable(_: Request, exc: AIUnavailable) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=503)
 
     @app.exception_handler(CaseInputError)
     async def invalid_input(_: Request, exc: CaseInputError) -> JSONResponse:

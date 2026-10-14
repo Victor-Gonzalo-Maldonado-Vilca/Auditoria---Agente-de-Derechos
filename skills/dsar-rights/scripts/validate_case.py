@@ -156,6 +156,35 @@ def validate(package: dict[str, Any]) -> list[str]:
             errors.append("La clasificacion de la IA no fue confirmada por un humano")
         if classification and classification.get("final_right") != package["request_type"]:
             errors.append("El derecho final no coincide con la confirmacion humana")
+    errors.extend(validate_ai_drafts(package))
+    return errors
+
+
+def validate_ai_drafts(package: dict[str, Any]) -> list[str]:
+    """AI drafts are proposals: traceable, intact and only sent if a person chose them."""
+    errors: list[str] = []
+    drafts = {}
+    for draft in package.get("ai_drafts", []):
+        required = {
+            "draft_id", "provider", "model", "actor", "status_at_generation",
+            "body", "body_sha256",
+        }
+        if required - draft.keys():
+            errors.append("Borrador de IA sin trazabilidad completa")
+            continue
+        if hashlib.sha256(str(draft["body"]).encode("utf-8")).hexdigest() != draft["body_sha256"]:
+            errors.append(f"La huella del borrador {draft['draft_id']} no coincide")
+        if draft["status_at_generation"] not in ALLOWED_STATES:
+            errors.append(f"Estado no admitido en el borrador {draft['draft_id']}")
+        drafts[draft["draft_id"]] = draft
+    outbox = package.get("outbox") or {}
+    source = outbox.get("source")
+    if source and source != "plantilla":
+        chosen = drafts.get(source)
+        if chosen is None:
+            errors.append("La respuesta enviada cita un borrador de IA inexistente")
+        elif chosen["body_sha256"] != outbox.get("body_sha256"):
+            errors.append("La respuesta enviada no coincide con el borrador de IA elegido")
     return errors
 
 

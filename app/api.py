@@ -35,6 +35,18 @@ class RequestIn(BaseModel):
     policy_id: str
     request_text: str = ""
     identity_verification: IdentityIn = IdentityIn()
+    ai_suggestion_token: str | None = Field(
+        None, description="Token de /api/assist/classify si la IA sugirio el derecho."
+    )
+
+
+class SuggestIn(BaseModel):
+    request_text: str
+
+
+class DraftIn(BaseModel):
+    provider: Literal["gemini", "claude"]
+    actor: str
 
 
 class IdentityConfirmationIn(BaseModel):
@@ -55,6 +67,9 @@ class ActorIn(BaseModel):
 
 class SendIn(ActorIn):
     channel: str = "email-simulado"
+    draft_source: str = Field(
+        "plantilla", description="'plantilla' o el draft_id de un borrador de IA."
+    )
 
 
 def summary(package: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +89,27 @@ def with_actions(orchestrator: Orchestrator, package: dict[str, Any]) -> dict[st
         **package,
         "available_actions": orchestrator.available_actions(package["case_id"]),
     }
+
+
+@router.get("/assist/status")
+def assist_status(orchestrator: Orchestrator = Depends(get_orchestrator)) -> dict[str, Any]:
+    return orchestrator.ai_status()
+
+
+@router.post("/assist/classify")
+def assist_classify(
+    payload: SuggestIn, orchestrator: Orchestrator = Depends(get_orchestrator)
+) -> dict[str, Any]:
+    """Sugerencia de la IA; la persona confirma el derecho al registrar la solicitud."""
+    return orchestrator.suggest_right(payload.request_text)
+
+
+@router.post("/cases/{case_id}/drafts", status_code=201)
+def create_draft(
+    case_id: str, payload: DraftIn, orchestrator: Orchestrator = Depends(get_orchestrator)
+) -> dict[str, Any]:
+    """Genera un borrador con Gemini o Claude. No cambia el estado del caso."""
+    return orchestrator.generate_ai_draft(case_id, payload.provider, payload.actor)
 
 
 @router.get("/policies")
@@ -151,7 +187,9 @@ def fulfill(
 def send(
     case_id: str, payload: SendIn, orchestrator: Orchestrator = Depends(get_orchestrator)
 ) -> dict[str, Any]:
-    package = orchestrator.send_response(case_id, payload.actor, payload.channel)
+    package = orchestrator.send_response(
+        case_id, payload.actor, payload.channel, payload.draft_source
+    )
     return with_actions(orchestrator, package)
 
 
