@@ -52,6 +52,7 @@ Tambien puede iniciarse directamente con `uvicorn app.main:app --reload` desde l
 | `/` | Bandeja de casos con estado, fecha limite y dias restantes. |
 | `/solicitudes/nueva` | Formulario para registrar una solicitud ficticia del titular. |
 | `/casos/<id>` | Panel HITL: motivos, datos localizados, RAG, borrador, decisiones firmadas, coordinacion de agentes y auditoria. |
+| `/pruebas` | Casos de prueba: 13 escenarios con resultado esperado; se ejecutan todos o uno a uno y muestran cada comprobacion. |
 | `/inventario` | Sistemas con PII que consulta el Agente de Inventario. |
 | `/evidencia` | Cadena de evidencia con verificacion de integridad. |
 | `/docs` | Documentacion interactiva de la API REST (`/api/...`). |
@@ -76,6 +77,7 @@ Tambien puede iniciarse directamente con `uvicorn app.main:app --reload` desde l
 | `POST /api/cases/{id}/fulfill`, `/send`, `/close` | Ejecucion simulada, respuesta y cierre (`actor`). |
 | `GET /api/cases/{id}/response.md` | Borrador o respuesta enviada en Markdown. |
 | `GET /api/evidence`, `GET /api/evidence/verify` | Registro de evidencia y verificacion de la cadena. |
+| `GET /api/scenarios`, `POST /api/scenarios/run` | Catalogo de casos de prueba y su ejecucion (todos o `?scenario_id=CP-01`). |
 
 Las transiciones no permitidas devuelven `409` y las entradas invalidas `422`.
 
@@ -300,7 +302,7 @@ Get-ChildItem .\simulaciones -Recurse -Filter response-draft.md |
 Resultado esperado:
 
 ```text
-Ran 53 tests
+Ran 59 tests
 OK
 ```
 

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from agents import scenarios as test_scenarios
 from agents.orchestrator import AIUnavailable, CaseInputError, CaseNotFound, Orchestrator
 
 router = APIRouter(include_in_schema=False)
@@ -336,6 +337,48 @@ def evidence(request: Request):
             "verification": orchestrator.evidence.verify_chain(),
         },
     )
+
+
+@router.get("/pruebas", response_class=HTMLResponse)
+def scenarios_page(request: Request):
+    catalog = test_scenarios.load_scenarios()
+    results = request.app.state.scenario_results
+    executed = [results[item["id"]] for item in catalog if item["id"] in results]
+    return render(
+        request,
+        "scenarios.html",
+        {
+            "scenarios": catalog,
+            "results": results,
+            "step_labels": test_scenarios.STEP_LABELS,
+            "check_labels": test_scenarios.CHECK_LABELS,
+            "summary": {
+                "total": len(catalog),
+                "passed": sum(1 for item in executed if item["passed"]),
+                "failed": sum(1 for item in executed if not item["passed"]),
+                "pending": len(catalog) - len(executed),
+            },
+        },
+    )
+
+
+@router.post("/pruebas/ejecutar")
+async def scenarios_run(request: Request):
+    form = await request.form()
+    selected = str(form.get("scenario_id", "")).strip()
+    catalog = test_scenarios.load_scenarios()
+    if selected:
+        catalog = [item for item in catalog if item["id"] == selected]
+        if not catalog:
+            return redirect("/pruebas", error=f"Caso de prueba desconocido: {selected}")
+    results = test_scenarios.run_all(orchestrator_of(request), catalog)
+    for item in results:
+        request.app.state.scenario_results[item["scenario_id"]] = item
+    passed = sum(1 for item in results if item["passed"])
+    message = f"{passed} de {len(results)} casos de prueba superados."
+    if passed == len(results):
+        return redirect("/pruebas", msg=message)
+    return redirect("/pruebas", error=message + " Revise los que fallaron.")
 
 
 @router.get("/inventario", response_class=HTMLResponse)

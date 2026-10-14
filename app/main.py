@@ -35,6 +35,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         version="0.2.0",
     )
     app.state.orchestrator = orchestrator or Orchestrator.from_env()
+    app.state.scenario_results = {}
 
     @app.exception_handler(CaseNotFound)
     async def not_found(_: Request, exc: CaseNotFound) -> JSONResponse:

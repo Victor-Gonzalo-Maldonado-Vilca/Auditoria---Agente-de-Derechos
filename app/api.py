@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from agents import scenarios as test_scenarios
 from agents.orchestrator import Orchestrator
 
 router = APIRouter(prefix="/api", tags=["DSAR"])
@@ -110,6 +111,27 @@ def create_draft(
 ) -> dict[str, Any]:
     """Genera un borrador con Gemini o Claude. No cambia el estado del caso."""
     return orchestrator.generate_ai_draft(case_id, payload.provider, payload.actor)
+
+
+@router.get("/scenarios", tags=["Casos de prueba"])
+def list_scenarios() -> list[dict[str, Any]]:
+    return test_scenarios.load_scenarios()
+
+
+@router.post("/scenarios/run", tags=["Casos de prueba"])
+def run_scenarios(
+    scenario_id: str | None = None, orchestrator: Orchestrator = Depends(get_orchestrator)
+) -> dict[str, Any]:
+    """Ejecuta todos los casos de prueba (o uno, con `scenario_id`) y compara lo esperado."""
+    catalog = test_scenarios.load_scenarios()
+    if scenario_id:
+        catalog = [item for item in catalog if item["id"] == scenario_id]
+    results = test_scenarios.run_all(orchestrator, catalog) if catalog else []
+    return {
+        "total": len(results),
+        "passed": sum(1 for item in results if item["passed"]),
+        "results": results,
+    }
 
 
 @router.get("/policies")

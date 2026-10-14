@@ -26,6 +26,7 @@
       <nav class="main-nav" aria-label="Principal">
         <a href="/" {% if nav == 'inbox' %}aria-current="page"{% endif %}>{{ ui.icon("inbox") }}Bandeja</a>
         <a href="/solicitudes/nueva" {% if nav == 'new' %}aria-current="page"{% endif %}>{{ ui.icon("plus") }}Nueva solicitud</a>
+        <a href="/pruebas" {% if nav == 'tests' %}aria-current="page"{% endif %}>{{ ui.icon("check") }}Casos de prueba</a>
         <a href="/inventario" {% if nav == 'inventory' %}aria-current="page"{% endif %}>{{ ui.icon("database") }}Inventario</a>
         <a href="/evidencia" {% if nav == 'evidence' %}aria-current="page"{% endif %}>{{ ui.icon("lock") }}Evidencia</a>
         <a class="nav-api" href="/docs">{{ ui.icon("code") }}API</a>

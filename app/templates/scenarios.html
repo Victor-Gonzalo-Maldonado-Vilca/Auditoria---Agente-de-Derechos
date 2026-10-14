@@ -1,0 +1,110 @@
+{% set nav = "tests" %}
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}Casos de prueba{% endblock %}
+
+{% macro value(item) -%}
+{%- if item is sameas true -%}sí
+{%- elif item is sameas false -%}no
+{%- elif item is none -%}—
+{%- elif item is string -%}{{ STATUS_LABELS.get(item, item) }}
+{%- elif item is iterable -%}{{ item|join(', ') if item else 'ninguno' }}
+{%- else -%}{{ item }}
+{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Casos de prueba</h1>
+    <p class="lead">Escenarios que comprueban los controles del agente: cada uno registra una solicitud ficticia, aplica los pasos del ciclo HITL y compara el resultado con lo esperado. No usan IA.</p>
+  </div>
+  <form method="post" action="/pruebas/ejecutar">
+    <button class="btn btn-primary" type="submit">{{ ui.icon("play") }}Ejecutar todos</button>
+  </form>
+</header>
+
+<section class="kpi-grid" aria-label="Resumen">
+  <div class="card kpi">
+    <span class="kpi-icon tone-info">{{ ui.icon("file", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ summary.total }}</div><div class="kpi-label">Casos definidos</div></div>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-icon tone-success">{{ ui.icon("check", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ summary.passed }}</div><div class="kpi-label">Superados</div></div>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-icon {{ 'tone-danger' if summary.failed else 'tone-neutral' }}">{{ ui.icon("x", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ summary.failed }}</div><div class="kpi-label">Fallidos</div></div>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-icon tone-neutral">{{ ui.icon("clock", "icon-lg") }}</span>
+    <div><div class="kpi-value">{{ summary.pending }}</div><div class="kpi-label">Sin ejecutar</div><div class="kpi-sub">Los resultados se borran al reiniciar la aplicación</div></div>
+  </div>
+</section>
+
+<div class="stack">
+  {% for scenario in scenarios %}
+  {% set result = results.get(scenario.id) %}
+  <section class="card" aria-labelledby="sc-{{ scenario.id }}">
+    <div class="card-header">
+      <h2 id="sc-{{ scenario.id }}"><span class="mono">{{ scenario.id }}</span> · {{ scenario.title }}</h2>
+      {% if not result %}
+        <span class="badge plain tone-neutral">Sin ejecutar</span>
+      {% elif result.passed %}
+        <span class="badge plain tone-success">Superado</span>
+      {% else %}
+        <span class="badge plain tone-danger">Fallido</span>
+      {% endif %}
+    </div>
+    <div class="card-body stack-sm">
+      <p class="text-sm">{{ scenario.objective }}</p>
+      <dl class="dl">
+        <dt>Control ISO</dt><dd>{{ scenario.control }}</dd>
+        <dt>Solicitud</dt>
+        <dd>{{ RIGHT_LABELS.get(scenario.request.request_type, scenario.request.request_type) }} ·
+          <span class="mono">{{ scenario.request.principal_id }}</span> ·
+          {{ scenario.request.policy_id }} ·
+          identidad {{ 'verificada' if scenario.request.identity == 'verified' else 'pendiente' }}</dd>
+        <dt>Pasos</dt>
+        <dd>{% if scenario.steps %}{% for step in scenario.steps %}{{ step_labels.get(step, step) }}{% if not loop.last %} → {% endif %}{% endfor %}{% else %}Solo registrar{% endif %}</dd>
+      </dl>
+      <p class="label mt-2">Texto del titular <span class="muted">(dato no confiable)</span></p>
+      <div class="quote">{{ scenario.request.request_text }}</div>
+    </div>
+
+    {% if result %}
+    <div class="card-body flush">
+      {% if result.error %}
+        <div class="card-body"><div class="alert alert-inline tone-danger">{{ ui.icon("alert") }}<span>{{ result.error }}</span></div></div>
+      {% endif %}
+      <table class="table responsive">
+        <thead><tr><th scope="col">Comprobación</th><th scope="col">Esperado</th><th scope="col">Obtenido</th><th scope="col">Resultado</th></tr></thead>
+        <tbody>
+        {% for item in result.checks %}
+          <tr>
+            <td class="cell-primary" data-label="Comprobación">{{ item.label }}</td>
+            <td data-label="Esperado">{{ value(item.expected) }}</td>
+            <td data-label="Obtenido">{{ value(item.actual) }}</td>
+            <td data-label="Resultado">{% if item.ok %}<span class="badge plain tone-success">OK</span>{% else %}<span class="badge plain tone-danger">Falla</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <div class="card-footer form-actions">
+      {% if result and result.case_id %}
+        <span class="muted text-sm">Ejecutado {{ result.ran_at|fmt_dt }}</span>
+        <a class="btn btn-secondary btn-sm" href="/casos/{{ result.case_id }}">{{ ui.icon("file") }}Ver caso {{ result.case_id }}</a>
+      {% endif %}
+      <form method="post" action="/pruebas/ejecutar">
+        <input type="hidden" name="scenario_id" value="{{ scenario.id }}">
+        <button class="btn btn-secondary btn-sm" type="submit">{{ ui.icon("play") }}{{ 'Volver a ejecutar' if result else 'Ejecutar' }}</button>
+      </form>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
