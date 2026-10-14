@@ -18,7 +18,7 @@ Actua como asistente del responsable de privacidad. Convierte una solicitud de u
 5. Recupera contexto pertinente desde el indice vectorial `rag/vector_store.json` mediante `rag/dsar_rag.py`; conserva fuente, seccion, similitud coseno y huella de cada fragmento.
 6. Localiza solo los registros del titular y conserva la procedencia de cada resultado.
 7. Separa datos del titular, datos de terceros, restricciones y posibles obligaciones de conservacion.
-8. Prepara una accion propuesta y un borrador fundamentado. No marques ninguna mutacion o comunicacion como ejecutada.
+8. Prepara una accion propuesta y un borrador fundamentado. No marques ninguna mutacion o comunicacion como ejecutada sin una aprobacion humana registrada; aun aprobada, la ejecucion del prototipo es solo simulada.
 9. Deriva a aprobacion humana los casos indicados en [workflow-and-states.md](references/workflow-and-states.md).
 10. Conserva un rastro de eventos, entradas y fragmentos recuperados.
 
@@ -30,6 +30,8 @@ Actua como asistente del responsable de privacidad. Convierte una solicitud de u
 - Usa [response-template.md](assets/response-template.md) para redactar la comunicacion, manteniendola siempre como borrador.
 - Usa el recuperador vectorial local `rag/dsar_rag.py` para obtener contexto verificable. Regenera el indice cuando cambien las referencias. El RAG orienta el borrador, pero no reemplaza la politica aprobada ni la decision humana.
 - Para una demostracion guiada, ejecuta `demo/dsar_simulator.py` desde la raiz del proyecto. Para integraciones o pruebas directas, usa `scripts/dsar_case.py` y valida el resultado con `scripts/validate_case.py`.
+- Para el ciclo completo con aprobacion humana usa `scripts/case_lifecycle.py` (confirmar identidad, aprobar, rechazar, ejecutar de forma simulada, responder y cerrar). Ninguna transicion se salta la decision humana registrada.
+- El orquestador `agents/orchestrator.py` coordina el Flujo 3 con el Agente de Inventario y el Agente de Evidencia simulados. La interfaz web (`app/`, FastAPI + HTML) expone el panel HITL y una API REST documentada en `/docs`.
 
 ## Limites obligatorios
 

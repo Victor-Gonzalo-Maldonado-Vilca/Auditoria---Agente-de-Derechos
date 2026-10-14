@@ -28,9 +28,14 @@ TRIAGED -> IDENTITY_PENDING
 TRIAGED -> VERIFIED -> DISCOVERY
 DISCOVERY -> REVIEW
 DISCOVERY -> APPROVAL_REQUIRED
+IDENTITY_PENDING -> VERIFIED -> DISCOVERY      (confirmar identidad)
+REVIEW | APPROVAL_REQUIRED -> APPROVED         (aprobacion humana firmada)
+IDENTITY_PENDING | REVIEW | APPROVAL_REQUIRED -> REJECTED   (rechazo fundamentado)
+APPROVED -> FULFILLED                          (ejecucion simulada)
+FULFILLED | REJECTED -> respuesta en bandeja de salida simulada -> CLOSED
 ```
 
-El prototipo termina en `IDENTITY_PENDING`, `REVIEW` o `APPROVAL_REQUIRED`. Los estados posteriores representan integraciones y decisiones futuras, no implementadas en esta fase.
+El motor (`dsar_case.py`) deja el caso en `IDENTITY_PENDING`, `REVIEW` o `APPROVAL_REQUIRED`. El ciclo posterior lo implementa `case_lifecycle.py`, y el orquestador (`agents/orchestrator.py`) lo expone en la interfaz web. Cada decision humana registra nombre, rol, comentario, fecha y una huella SHA-256. La ejecucion y el envio se simulan: no se modifican sistemas origen ni salen comunicaciones. `ON_HOLD`, `PARTIALLY_FULFILLED`, `ESCALATED` y `CANCELLED` siguen reservados para fases futuras.
 
 ## Casos que requieren HITL
 
@@ -47,7 +52,9 @@ El prototipo termina en `IDENTITY_PENDING`, `REVIEW` o `APPROVAL_REQUIRED`. Los 
 ## Invariantes
 
 1. Una identidad distinta de `verified` produce cero registros descubiertos.
-2. Una accion de mutacion nunca contiene `executed: true` en esta fase.
+2. `executed: true` solo aparece tras una aprobacion humana registrada, en `FULFILLED` o `CLOSED`, y siempre con `simulated: true`.
 3. El plazo procede de una politica configurada, no del conocimiento del modelo.
 4. Cada registro entregable conserva `source_system` y `record_id`.
 5. Los campos listados en `third_party_fields` no aparecen en la vista preparada para el titular.
+6. Toda decision humana conserva una huella SHA-256 verificable; alterarla invalida el expediente.
+7. Un caso solo se cierra despues de registrar la respuesta, cuyo contenido queda congelado con su huella.
