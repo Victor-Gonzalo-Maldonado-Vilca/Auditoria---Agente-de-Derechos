@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from agents import scenarios as test_scenarios
+from app.markdown import render_markdown
 from agents.orchestrator import AIUnavailable, CaseInputError, CaseNotFound, Orchestrator
 
 router = APIRouter(include_in_schema=False)
@@ -87,6 +88,7 @@ templates.env.filters["fmt_dt"] = lambda value: (
     str(value).replace("T", " ")[:16] + " UTC" if value else "—"
 )
 templates.env.filters["short_hash"] = lambda value: f"{str(value)[:12]}…"
+templates.env.filters["markdown"] = render_markdown
 
 
 def orchestrator_of(request: Request) -> Orchestrator:

@@ -176,7 +176,11 @@
           <p class="muted text-sm">Enviada el {{ case.outbox.sent_at|fmt_dt }} por {{ case.outbox.actor }} · texto: {{ case.outbox.source or 'plantilla' }}</p>
           <p class="hash" title="{{ case.outbox.body_sha256 }}">SHA-256 {{ case.outbox.body_sha256 }}</p>
         {% endif %}
-        <pre class="code-block">{{ draft }}</pre>
+        <div class="markdown">{{ draft|markdown }}</div>
+        <details class="raw-source">
+          <summary>Ver Markdown original</summary>
+          <pre class="code-block">{{ draft }}</pre>
+        </details>
       </div>
     </section>
 
@@ -214,8 +218,12 @@
             <summary><span>{{ item.provider }}/{{ item.model }} <span class="muted">· {{ item.generated_at|fmt_dt }} · {{ item.actor }}</span></span>
               <span class="badge plain {{ 'tone-teal' if case.outbox and case.outbox.source == item.draft_id else 'tone-neutral' }}">{{ 'Enviado' if case.outbox and case.outbox.source == item.draft_id else STATUS_LABELS.get(item.status_at_generation, item.status_at_generation) }}</span></summary>
             <div class="disclosure-body stack-sm">
-              <pre class="code-block">{{ item.body }}</pre>
-              <p class="hash">{{ item.draft_id }} · SHA-256 {{ item.body_sha256 }}</p>
+              <div class="markdown">{{ item.body|markdown }}</div>
+              <details class="raw-source">
+                <summary>Ver Markdown original</summary>
+                <pre class="code-block">{{ item.body }}</pre>
+              </details>
+              <p class="hash">{{ item.draft_id }} · SHA-256 {{ item.body_sha256 }} (calculada sobre el Markdown original)</p>
             </div>
           </details>
         {% else %}
