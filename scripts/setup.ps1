@@ -25,11 +25,12 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 
 Write-Output "Comprobando el entorno..."
 & $VenvPython --version
-& $VenvPython -m pip install --disable-pip-version-check -r (Join-Path $ProjectRoot "requirements.txt")
+& $VenvPython -m pip install --disable-pip-version-check -r (Join-Path $ProjectRoot "requirements.txt") -r (Join-Path $ProjectRoot "requirements-dev.txt")
 & $VenvPython -B -m unittest discover -s (Join-Path $ProjectRoot "tests") -v
 
 Write-Output ""
 Write-Output "Entorno listo. Ejecute:"
+Write-Output "  .\scripts\run_app.ps1   (interfaz web)"
 Write-Output "  .\scripts\run_demo.ps1"
 Write-Output "o directamente:"
 Write-Output "  .\.venv\Scripts\python.exe .\demo\dsar_simulator.py"

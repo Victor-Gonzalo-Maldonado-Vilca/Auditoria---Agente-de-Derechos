@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Agente DSAR{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="inner">
+      <a class="brand" href="/">Agente de Derechos DSAR<small>PIMS · ISO/IEC 27701:2025</small></a>
+      <nav>
+        <a href="/" class="{{ 'active' if nav == 'inbox' }}">Bandeja</a>
+        <a href="/solicitudes/nueva" class="{{ 'active' if nav == 'new' }}">Nueva solicitud</a>
+        <a href="/inventario" class="{{ 'active' if nav == 'inventory' }}">Inventario</a>
+        <a href="/evidencia" class="{{ 'active' if nav == 'evidence' }}">Evidencia</a>
+        <a href="/docs">API</a>
+      </nav>
+    </div>
+  </header>
+  <div class="banner">Datos ficticios · simulación académica: no se modifican sistemas reales ni se envían comunicaciones.</div>
+  <main>
+    {% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

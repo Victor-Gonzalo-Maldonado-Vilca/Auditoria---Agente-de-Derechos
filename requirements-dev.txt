@@ -1,0 +1,2 @@
+# Necesario para las pruebas de la interfaz web (fastapi.testclient).
+httpx==0.28.1

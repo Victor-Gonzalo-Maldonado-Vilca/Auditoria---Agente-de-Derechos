@@ -1,0 +1,251 @@
+"""Server-rendered HTML pages: case inbox, request form, HITL panel, evidence."""
+
+from __future__ import annotations
+
+import json
+from collections import Counter
+from datetime import date
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
+
+from agents.orchestrator import CaseInputError, CaseNotFound, Orchestrator
+
+router = APIRouter(include_in_schema=False)
+templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
+
+RIGHT_LABELS = {
+    "access": "Acceso",
+    "rectification": "Rectificacion",
+    "erasure": "Supresion",
+    "portability": "Portabilidad",
+    "objection": "Oposicion",
+}
+STATUS_LABELS = {
+    "RECEIVED": "Recibida",
+    "TRIAGED": "Clasificada",
+    "IDENTITY_PENDING": "Identidad pendiente",
+    "VERIFIED": "Verificada",
+    "DISCOVERY": "Descubrimiento",
+    "REVIEW": "En revision",
+    "APPROVAL_REQUIRED": "Requiere aprobacion",
+    "APPROVED": "Aprobada",
+    "FULFILLED": "Ejecutada (simulada)",
+    "CLOSED": "Cerrada",
+    "REJECTED": "Rechazada",
+}
+ROLES = ["DPO", "Responsable de privacidad", "Asesoria legal"]
+VERIFICATION_METHODS = ["Presencial", "Portal autenticado", "Videollamada", "Documento cotejado"]
+CHANNELS = ["email-simulado", "portal-simulado", "carta-simulada"]
+ACTION_ROUTES = {
+    "verify-identity",
+    "approve",
+    "reject",
+    "fulfill",
+    "send",
+    "close",
+}
+
+templates.env.globals.update(
+    RIGHT_LABELS=RIGHT_LABELS,
+    STATUS_LABELS=STATUS_LABELS,
+    ROLES=ROLES,
+    VERIFICATION_METHODS=VERIFICATION_METHODS,
+    CHANNELS=CHANNELS,
+)
+templates.env.filters["pretty_json"] = lambda value: json.dumps(
+    value, indent=2, ensure_ascii=False
+)
+
+
+def orchestrator_of(request: Request) -> Orchestrator:
+    return request.app.state.orchestrator
+
+
+def days_left(package: dict[str, Any]) -> int:
+    return (date.fromisoformat(package["deadline_at"]) - date.today()).days
+
+
+def redirect(path: str, **params: str) -> RedirectResponse:
+    query = urlencode({key: value for key, value in params.items() if value})
+    return RedirectResponse(f"{path}?{query}" if query else path, status_code=303)
+
+
+def render(request: Request, name: str, context: dict[str, Any], status_code: int = 200):
+    context = {
+        "msg": request.query_params.get("msg"),
+        "error": request.query_params.get("error"),
+        "actor": request.cookies.get("dsar_actor", ""),
+        **context,
+    }
+    return templates.TemplateResponse(request, name, context, status_code=status_code)
+
+
+@router.get("/", response_class=HTMLResponse)
+def inbox(request: Request):
+    cases = orchestrator_of(request).list_cases()
+    for item in cases:
+        item["days_left"] = days_left(item)
+    counts = Counter(item["status"] for item in cases)
+    open_cases = [item for item in cases if item["status"] not in {"CLOSED"}]
+    return render(
+        request,
+        "index.html",
+        {
+            "cases": cases,
+            "counts": counts,
+            "pending_hitl": sum(
+                1 for item in open_cases
+                if item["status"] in {"APPROVAL_REQUIRED", "REVIEW", "IDENTITY_PENDING"}
+            ),
+            "due_soon": sum(1 for item in open_cases if item["days_left"] <= 5),
+        },
+    )
+
+
+@router.get("/solicitudes/nueva", response_class=HTMLResponse)
+def new_request(request: Request):
+    orchestrator = orchestrator_of(request)
+    return render(
+        request,
+        "new_request.html",
+        {
+            "policies": orchestrator.policies(),
+            "principals": orchestrator.inventory.known_principals() + ["person-999"],
+            "today": date.today().isoformat(),
+        },
+    )
+
+
+@router.post("/solicitudes")
+async def create_request(request: Request):
+    form = await request.form()
+    payload = {
+        "principal_id": str(form.get("principal_id", "")).strip(),
+        "request_type": str(form.get("request_type", "")).strip(),
+        "policy_id": str(form.get("policy_id", "")).strip(),
+        "request_text": str(form.get("request_text", "")).strip(),
+        "identity_verification": {
+            "status": "verified" if form.get("identity_verified") == "on" else "pending",
+            "method": "formulario-web",
+            "reference": str(form.get("identity_reference", "")).strip() or "sin-referencia",
+        },
+    }
+    received_at = str(form.get("received_at", "")).strip()
+    if received_at:
+        payload["received_at"] = received_at
+    try:
+        package = orchestrator_of(request).submit(payload)
+    except CaseInputError as exc:
+        return redirect("/solicitudes/nueva", error=str(exc))
+    return redirect(
+        f"/casos/{package['case_id']}",
+        msg=f"Solicitud registrada en estado {STATUS_LABELS.get(package['status'], package['status'])}.",
+    )
+
+
+@router.get("/casos/{case_id}", response_class=HTMLResponse)
+def case_detail(request: Request, case_id: str):
+    orchestrator = orchestrator_of(request)
+    try:
+        dsar_request, package = orchestrator.store.load(case_id)
+    except CaseNotFound:
+        return render(request, "error.html", {"message": f"Caso no encontrado: {case_id}"}, 404)
+    return render(
+        request,
+        "case.html",
+        {
+            "case": package,
+            "dsar_request": dsar_request,
+            "days_left": days_left(package),
+            "actions": orchestrator.available_actions(case_id),
+            "draft": orchestrator.response_markdown(case_id),
+            "evidence": orchestrator.evidence.entries(case_id),
+        },
+    )
+
+
+@router.post("/casos/{case_id}/{action}")
+async def case_action(request: Request, case_id: str, action: str):
+    if action not in ACTION_ROUTES:
+        return render(request, "error.html", {"message": "Accion no admitida"}, 404)
+    orchestrator = orchestrator_of(request)
+    form = await request.form()
+    actor = str(form.get("actor", "")).strip()
+    role = str(form.get("role", "")).strip()
+    comment = str(form.get("comment", "")).strip()
+    try:
+        if action == "verify-identity":
+            orchestrator.confirm_identity(
+                case_id, actor, str(form.get("method", "")), str(form.get("reference", ""))
+            )
+            message = "Identidad confirmada y descubrimiento ejecutado."
+        elif action == "approve":
+            orchestrator.approve(case_id, actor, role, comment)
+            message = "Plan aprobado y firmado."
+        elif action == "reject":
+            orchestrator.reject(case_id, actor, role, comment)
+            message = "Solicitud rechazada con fundamento."
+        elif action == "fulfill":
+            orchestrator.fulfill(case_id, actor)
+            message = "Ejecucion simulada registrada."
+        elif action == "send":
+            orchestrator.send_response(case_id, actor, str(form.get("channel", "")))
+            message = "Respuesta registrada en la bandeja de salida simulada."
+        else:
+            orchestrator.close(case_id, actor)
+            message = "Caso cerrado."
+    except CaseNotFound:
+        return render(request, "error.html", {"message": f"Caso no encontrado: {case_id}"}, 404)
+    except CaseInputError as exc:
+        return redirect(f"/casos/{case_id}", error=str(exc))
+    response = redirect(f"/casos/{case_id}", msg=message)
+    if actor:
+        response.set_cookie("dsar_actor", actor, max_age=60 * 60 * 24 * 30, samesite="lax")
+    return response
+
+
+@router.get("/casos/{case_id}/expediente.json")
+def download_package(request: Request, case_id: str):
+    package = orchestrator_of(request).get_case(case_id)
+    return Response(
+        json.dumps(package, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{case_id}-case-package.json"'},
+    )
+
+
+@router.get("/casos/{case_id}/respuesta.md")
+def download_response(request: Request, case_id: str):
+    body = orchestrator_of(request).response_markdown(case_id)
+    return Response(
+        body,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{case_id}-response.md"'},
+    )
+
+
+@router.get("/evidencia", response_class=HTMLResponse)
+def evidence(request: Request):
+    orchestrator = orchestrator_of(request)
+    return render(
+        request,
+        "evidence.html",
+        {
+            "entries": list(reversed(orchestrator.evidence.entries())),
+            "verification": orchestrator.evidence.verify_chain(),
+        },
+    )
+
+
+@router.get("/inventario", response_class=HTMLResponse)
+def inventory(request: Request):
+    return render(
+        request,
+        "inventory.html",
+        {"systems": orchestrator_of(request).inventory.systems()},
+    )

@@ -1,2 +1,6 @@
-# El simulador usa solo la biblioteca estandar de Python.
-# Este archivo mantiene reproducible el paso de configuracion del entorno.
+# El motor DSAR, el RAG y el simulador de consola usan solo la biblioteca estandar.
+# Estas dependencias son para la interfaz web (FastAPI + HTML).
+fastapi==0.143.1
+uvicorn==0.54.0
+jinja2==3.1.6
+python-multipart==0.0.32

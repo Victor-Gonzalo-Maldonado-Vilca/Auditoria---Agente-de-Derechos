@@ -1,0 +1,14 @@
+# Despliegue gratuito en Render (https://render.com): New > Blueprint > seleccionar este repositorio.
+# En el plan gratuito el disco es efimero: los casos de data/runtime se pierden al reiniciar.
+services:
+  - type: web
+    name: agente-dsar
+    runtime: python
+    plan: free
+    branch: VictorDev
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/cases
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3

@@ -1,0 +1,207 @@
+{% set nav = "inbox" %}
+{% extends "base.html" %}
+{% block title %}{{ case.case_id }} · Agente DSAR{% endblock %}
+{% block content %}
+<h1>{{ case.case_id }} <span class="pill status-{{ case.status|lower }}">{{ STATUS_LABELS.get(case.status, case.status) }}</span></h1>
+<p class="subtitle">
+  {{ RIGHT_LABELS.get(case.request_type, case.request_type) }} · titular <span class="mono">{{ case.principal_id }}</span> ·
+  vence el {{ case.deadline_at }}
+  {% if case.status != 'CLOSED' %}
+    (<span class="{{ 'late' if days_left <= 5 else '' }}">{% if days_left < 0 %}vencido hace {{ -days_left }} días{% else %}{{ days_left }} días restantes{% endif %}</span>)
+  {% endif %}
+</p>
+
+<div class="grid grid-2">
+  <div>
+    <section class="card">
+      <h2>Panel HITL</h2>
+      {% if case.hitl.reasons %}
+        <p class="muted">Motivos que exigen decisión humana:</p>
+        <ul class="reasons">{% for reason in case.hitl.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+      {% else %}
+        <p class="muted">Sin motivos especiales: revisión humana ordinaria antes de ejecutar.</p>
+      {% endif %}
+      <p><strong>Acción propuesta:</strong> {{ case.proposed_action.description }}
+        {% if case.proposed_action.executed %}<span class="pill status-fulfilled">ejecutada (simulada)</span>{% else %}<span class="muted">(no ejecutada)</span>{% endif %}</p>
+
+      {% if not actions %}
+        <p class="muted">No hay acciones pendientes para este estado.</p>
+      {% endif %}
+
+      {% if 'verify_identity' in actions %}
+      <form class="action" method="post" action="/casos/{{ case.case_id }}/verify-identity">
+        <h2>Confirmar identidad</h2>
+        <p class="hint">Registre solo el método y la referencia de la verificación externa; nunca el documento.</p>
+        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
+        <div class="field"><label>Método</label>
+          <select name="method">{% for method in VERIFICATION_METHODS %}<option>{{ method }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Referencia</label><input type="text" name="reference" required placeholder="Ej.: verif-0001"></div>
+        <button class="btn" type="submit">Confirmar identidad y descubrir datos</button>
+      </form>
+      {% endif %}
+
+      {% if 'approve' in actions or 'reject' in actions %}
+      <form class="action" method="post">
+        <h2>Decisión del responsable</h2>
+        <div class="field"><label>Nombre</label><input type="text" name="actor" value="{{ actor }}" required></div>
+        <div class="field"><label>Rol</label>
+          <select name="role">{% for role in ROLES %}<option>{{ role }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Comentario o fundamento</label><textarea name="comment" required></textarea></div>
+        <div class="btn-row">
+          {% if 'approve' in actions %}<button class="btn" type="submit" formaction="/casos/{{ case.case_id }}/approve">Aprobar plan</button>{% endif %}
+          {% if 'reject' in actions %}<button class="btn danger" type="submit" formaction="/casos/{{ case.case_id }}/reject">Rechazar solicitud</button>{% endif %}
+        </div>
+      </form>
+      {% endif %}
+
+      {% if 'fulfill' in actions %}
+      <form class="action" method="post" action="/casos/{{ case.case_id }}/fulfill">
+        <h2>Ejecutar (simulado)</h2>
+        <p class="hint">Registra la ejecución aprobada. Los sistemas origen no se modifican.</p>
+        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
+        <button class="btn" type="submit">Registrar ejecución simulada</button>
+      </form>
+      {% endif %}
+
+      {% if 'send' in actions %}
+      <form class="action" method="post" action="/casos/{{ case.case_id }}/send">
+        <h2>Enviar respuesta (simulado)</h2>
+        <p class="hint">La respuesta se congela con su huella SHA-256 en la bandeja de salida simulada.</p>
+        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
+        <div class="field"><label>Canal</label>
+          <select name="channel">{% for channel in CHANNELS %}<option>{{ channel }}</option>{% endfor %}</select></div>
+        <button class="btn" type="submit">Enviar respuesta</button>
+      </form>
+      {% endif %}
+
+      {% if 'close' in actions %}
+      <form class="action" method="post" action="/casos/{{ case.case_id }}/close">
+        <h2>Cerrar caso</h2>
+        <div class="field"><label>Responsable</label><input type="text" name="actor" value="{{ actor }}" required></div>
+        <button class="btn" type="submit">Cerrar caso</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Datos localizados</h2>
+      {% if case.identity_verification.status != 'verified' %}
+        <p class="muted">Descubrimiento bloqueado: la identidad no está verificada.</p>
+      {% elif not case.discovered_records %}
+        <p class="muted">No se localizaron registros para este titular.</p>
+      {% else %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Origen</th><th>Categoría</th><th>Datos</th><th>Revisión</th></tr></thead>
+          <tbody>
+          {% for record in case.discovered_records %}
+            <tr>
+              <td class="mono">{{ record.source_system }}/{{ record.record_id }}</td>
+              <td>{{ record.category }}{% if record.sensitive %} <span class="pill status-approval_required">sensible</span>{% endif %}</td>
+              <td><pre>{{ record.data|pretty_json }}</pre></td>
+              <td>
+                {% if record.redacted_fields %}<div>Retirado (tercero): {{ record.redacted_fields|join(', ') }}</div>{% endif %}
+                {% for restriction in record.restrictions %}<div>{{ restriction }}</div>{% endfor %}
+                {% if not record.redacted_fields and not record.restrictions %}<span class="muted">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>{{ 'Respuesta enviada' if case.outbox else 'Borrador de respuesta' }}</h2>
+      {% if case.outbox %}
+        <p class="muted">Canal {{ case.outbox.channel }} · {{ case.outbox.sent_at }} · por {{ case.outbox.actor }}</p>
+        <p class="hash">SHA-256 {{ case.outbox.body_sha256 }}</p>
+      {% endif %}
+      <pre>{{ draft }}</pre>
+      <div class="btn-row" style="margin-top:12px">
+        <a class="btn secondary" href="/casos/{{ case.case_id }}/respuesta.md">Descargar respuesta (.md)</a>
+        <a class="btn secondary" href="/casos/{{ case.case_id }}/expediente.json">Descargar expediente (.json)</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Fundamento recuperado (RAG)</h2>
+      {% for chunk in case.rag.retrieved_chunks %}
+        <details>
+          <summary>{{ chunk.rank }}. {{ chunk.source }} — {{ chunk.section }} <span class="muted">(coseno {{ chunk.score }})</span></summary>
+          <p>{{ chunk.excerpt }}</p>
+          <p class="hash">{{ chunk.chunk_id }} · SHA-256 {{ chunk.sha256 }}</p>
+        </details>
+      {% else %}
+        <p class="muted">Sin fragmentos recuperados.</p>
+      {% endfor %}
+    </section>
+  </div>
+
+  <div>
+    <section class="card">
+      <h2>Expediente</h2>
+      <dl class="kv">
+        <dt>Recibida</dt><dd>{{ case.received_at }}</dd>
+        <dt>Política</dt><dd>{{ case.policy.policy_id }} ({{ case.policy.response_days }} días)</dd>
+        <dt>Identidad</dt><dd>{{ case.identity_verification.status }}{% if case.identity_verification.method %} · {{ case.identity_verification.method }}{% endif %}</dd>
+        <dt>Sistemas</dt><dd>{{ case.source_systems|join(', ') or '—' }}</dd>
+      </dl>
+      <p class="muted" style="margin-bottom:4px">Texto del titular (dato no confiable):</p>
+      <pre>{{ dsar_request.request_text or '—' }}</pre>
+    </section>
+
+    {% if case.approvals %}
+    <section class="card">
+      <h2>Decisiones firmadas</h2>
+      {% for item in case.approvals %}
+        <p><strong>{{ 'Aprobado' if item.decision == 'approve' else 'Rechazado' }}</strong> por {{ item.approver }} ({{ item.role }})<br>
+          <span class="muted">{{ item.decided_at }}</span><br>{{ item.comment }}</p>
+        <p class="hash">SHA-256 {{ item.decision_sha256 }}</p>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if case.execution %}
+    <section class="card">
+      <h2>Ejecución simulada</h2>
+      <p>{{ case.execution.summary }}</p>
+      <p class="muted">{{ case.execution.executed_at }} · {{ case.execution.actor }}</p>
+    </section>
+    {% endif %}
+
+    {% if case.coordination %}
+    <section class="card">
+      <h2>Coordinación de agentes</h2>
+      <ul class="timeline">
+        {% for step in case.coordination %}
+          <li><strong class="mono">{{ step.agent }}</strong><br>{{ step.description }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <h2>Registro de auditoría</h2>
+      <ul class="timeline">
+        {% for item in case.audit_trail %}
+          <li><strong>{{ item.sequence }}. {{ item.state }}</strong><br>{{ item.description }}
+            {% if item.actor %}<br><span class="muted">{{ item.actor }} · {{ item.timestamp }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Evidencia del caso</h2>
+      {% for entry in evidence %}
+        <p><strong>{{ entry.event_type }}</strong> <span class="muted">#{{ entry.sequence }} · {{ entry.recorded_at }}</span><br>
+          <span class="hash">{{ entry.entry_hash }}</span></p>
+      {% else %}
+        <p class="muted">Sin entradas.</p>
+      {% endfor %}
+      <a href="/evidencia">Ver cadena completa</a>
+    </section>
+  </div>
+</div>
+{% endblock %}

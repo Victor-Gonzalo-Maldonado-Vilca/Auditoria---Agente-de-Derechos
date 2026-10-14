@@ -1,0 +1,27 @@
+{% set nav = "inventory" %}
+{% extends "base.html" %}
+{% block title %}Inventario · Agente DSAR{% endblock %}
+{% block content %}
+<h1>Inventario de sistemas con PII</h1>
+<p class="subtitle">Catálogo ficticio que usa el Agente de Inventario simulado. Solo se buscan datos del titular en estos sistemas.</p>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Sistema</th><th>Responsable</th><th>Categorías</th><th>Finalidad</th><th>Base jurídica</th><th>Conservación</th></tr></thead>
+      <tbody>
+      {% for system in systems %}
+        <tr>
+          <td><strong>{{ system.name }}</strong><div class="mono muted">{{ system.system_id }}</div></td>
+          <td>{{ system.owner }}</td>
+          <td>{{ system.pii_categories|join(', ') }}</td>
+          <td>{{ system.purpose }}</td>
+          <td>{{ system.lawful_basis }}</td>
+          <td>{{ system.retention }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

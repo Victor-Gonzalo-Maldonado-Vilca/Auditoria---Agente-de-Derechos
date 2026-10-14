@@ -1,0 +1,48 @@
+{% set nav = "inbox" %}
+{% extends "base.html" %}
+{% block title %}Bandeja de casos · Agente DSAR{% endblock %}
+{% block content %}
+<h1>Bandeja de casos</h1>
+<p class="subtitle">Solicitudes de derechos registradas por el orquestador y su estado en el flujo con aprobación humana.</p>
+
+<div class="grid stats">
+  <div class="card stat"><div class="value">{{ cases|length }}</div><div class="label">Casos registrados</div></div>
+  <div class="card stat"><div class="value">{{ pending_hitl }}</div><div class="label">Esperan decisión humana</div></div>
+  <div class="card stat"><div class="value">{{ due_soon }}</div><div class="label">Abiertos que vencen en 5 días o menos</div></div>
+  <div class="card stat"><div class="value">{{ counts.get('CLOSED', 0) }}</div><div class="label">Cerrados</div></div>
+</div>
+
+<div class="card">
+  {% if cases %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Caso</th><th>Titular</th><th>Derecho</th><th>Estado</th><th>Recibida</th><th>Fecha límite</th><th>HITL</th></tr>
+      </thead>
+      <tbody>
+      {% for item in cases %}
+        <tr>
+          <td><a href="/casos/{{ item.case_id }}">{{ item.case_id }}</a></td>
+          <td class="mono">{{ item.principal_id }}</td>
+          <td>{{ RIGHT_LABELS.get(item.request_type, item.request_type) }}</td>
+          <td><span class="pill status-{{ item.status|lower }}">{{ STATUS_LABELS.get(item.status, item.status) }}</span></td>
+          <td>{{ item.received_at }}</td>
+          <td>
+            {{ item.deadline_at }}
+            {% if item.status != 'CLOSED' %}
+              <div class="{{ 'late' if item.days_left <= 5 else 'muted' }}">
+                {% if item.days_left < 0 %}Vencido hace {{ -item.days_left }} días{% else %}{{ item.days_left }} días restantes{% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td>{{ 'Sí' if item.hitl.required else 'No' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Todavía no hay casos. <a href="/solicitudes/nueva">Registre una solicitud</a> para empezar.</p>
+  {% endif %}
+</div>
+{% endblock %}

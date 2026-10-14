@@ -1,0 +1,42 @@
+{% set nav = "evidence" %}
+{% extends "base.html" %}
+{% block title %}Evidencia · Agente DSAR{% endblock %}
+{% block content %}
+<h1>Registro de evidencia</h1>
+<p class="subtitle">Agente de Evidencia simulado: registro de solo anexado donde cada entrada guarda la huella de la anterior.</p>
+
+<div class="card">
+  {% if verification.valid %}
+    <div class="flash ok" style="margin:0">Cadena íntegra: {{ verification.entries }} entradas verificadas.</div>
+  {% else %}
+    <div class="flash error" style="margin:0">
+      Cadena alterada:
+      <ul class="reasons">{% for item in verification.errors %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  {% if entries %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Caso</th><th>Evento</th><th>Estado</th><th>Fecha</th><th>Huellas</th></tr></thead>
+      <tbody>
+      {% for entry in entries %}
+        <tr>
+          <td>{{ entry.sequence }}</td>
+          <td><a href="/casos/{{ entry.case_id }}">{{ entry.case_id }}</a></td>
+          <td>{{ entry.event_type }}</td>
+          <td>{{ entry.payload.status }}</td>
+          <td>{{ entry.recorded_at }}</td>
+          <td><div class="hash">entrada {{ entry.entry_hash }}</div><div class="hash">anterior {{ entry.prev_hash }}</div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="muted">Todavía no hay evidencia registrada.</p>
+  {% endif %}
+</div>
+{% endblock %}
