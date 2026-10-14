@@ -14,6 +14,9 @@ SIMULATOR = ROOT / "demo" / "dsar_simulator.py"
 
 class SimulatorCliTests(unittest.TestCase):
     def run_scenario(self, scenario: str):
+        return self.run_cli(["--scenario", scenario])
+
+    def run_cli(self, selection: list[str]):
         with tempfile.TemporaryDirectory() as directory:
             output_dir = Path(directory) / "result"
             result = subprocess.run(
@@ -21,8 +24,8 @@ class SimulatorCliTests(unittest.TestCase):
                     sys.executable,
                     "-B",
                     str(SIMULATOR),
-                    "--scenario",
-                    scenario,
+                    *selection,
+                    "--no-ai",
                     "--output-dir",
                     str(output_dir),
                 ],
@@ -37,6 +40,7 @@ class SimulatorCliTests(unittest.TestCase):
             )
             self.assertTrue((output_dir / "request.json").exists())
             self.assertTrue((output_dir / "response-draft.md").exists())
+            self.assertFalse(package["llm"]["enabled"])
             return package
 
     def test_access_scenario(self):
@@ -55,6 +59,13 @@ class SimulatorCliTests(unittest.TestCase):
         package = self.run_scenario("erasure")
         self.assertTrue(package["hitl"]["required"])
         self.assertFalse(package["proposed_action"]["executed"])
+
+    def test_custom_request_file(self):
+        package = self.run_cli(
+            ["--request", str(ROOT / "tests" / "fixtures" / "request-access.json")]
+        )
+        self.assertEqual(package["case_id"], "DSAR-DEMO-001")
+        self.assertEqual(package["status"], "APPROVAL_REQUIRED")
 
 
 if __name__ == "__main__":

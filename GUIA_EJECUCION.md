@@ -6,7 +6,7 @@
 - PowerShell.
 - Python 3.10 o superior disponible mediante el comando `python`.
 
-El simulador usa solamente la biblioteca estandar de Python. No necesita internet, base de datos ni credenciales.
+El simulador usa solamente la biblioteca estandar de Python. No necesita base de datos. Sin clave de API funciona sin internet ni credenciales; con una clave de Gemini u OpenRouter activa el asistente de IA opcional (seccion 6).
 
 El proyecto incorpora un RAG vectorial local basico. Genera embeddings TF-IDF de unigramas y bigramas, los conserva en `rag/vector_store.json`, recupera por similitud coseno y registra los fragmentos con su procedencia y huella SHA-256.
 
@@ -18,6 +18,8 @@ El proyecto incorpora un RAG vectorial local basico. Genera embeddings TF-IDF de
 | `rag/dsar_rag.py` | Generacion de embeddings, indice y recuperacion vectorial. |
 | `rag/vector_store.json` | Vectores, vocabulario, IDF, metadatos y fragmentos indexados. |
 | `demo/dsar_simulator.py` | Simulador interactivo y escenarios preparados. |
+| `llm/dsar_llm.py` | Asistente de IA opcional (Gemini u OpenRouter) para triaje y redaccion. |
+| `.claude/skills/dsar-rights/` | Adaptador del skill para usar el agente dentro de Claude Code. |
 | `tests/` | Pruebas del motor DSAR, del RAG y de la ejecucion completa. |
 | `evidencias/` | Expedientes de muestra para la entrega academica. |
 
@@ -26,7 +28,7 @@ No es necesario incluir `.venv`, `simulaciones/` ni carpetas `__pycache__` en el
 ## 1. Abrir el proyecto
 
 ```powershell
-Set-Location "C:\UNSA\8SEMESTRE\AUDITORIA\PROYECTO"
+Set-Location "<ruta donde descomprimio o clono el proyecto>"
 ```
 
 ## 2. Preparar el entorno
@@ -58,9 +60,10 @@ Tambien puede ejecutarse directamente:
 .\.venv\Scripts\python.exe .\demo\dsar_simulator.py
 ```
 
-El menu permite elegir:
+El menu permite:
 
-- acceso, rectificacion, supresion, portabilidad u oposicion;
+- escribir la solicitud como la redactaria el titular (si el asistente de IA esta activo, sugiere el derecho y usted lo confirma o lo cambia);
+- elegir acceso, rectificacion, supresion, portabilidad u oposicion;
 - un titular ficticio;
 - identidad verificada o pendiente;
 - una politica temporal ficticia;
@@ -123,7 +126,58 @@ Para reconstruir el indice vectorial despues de modificar las referencias:
 .\scripts\run_rag.ps1 -Query "gestion de derechos DSAR" -RebuildIndex
 ```
 
-## 6. Revisar la salida
+## 6. Asistente de IA con Gemini (opcional)
+
+El simulador puede usar un modelo de lenguaje para dos tareas acotadas:
+
+- **triaje:** sugiere el derecho a partir del texto libre; la decision final la confirma la persona usuaria;
+- **redaccion:** genera `response-draft-ia.md`, un borrador en lenguaje natural que cita los fragmentos del RAG.
+
+El modelo no decide el estado, la verificacion de identidad, la redaccion de terceros ni la aprobacion humana. Solo recibe hechos minimizados del expediente (categorias, nombres de campos, motivos HITL y fragmentos RAG), nunca los valores de los datos personales. El expediente registra proveedor, modelo y huellas SHA-256 de cada prompt y respuesta.
+
+1. Obtenga una clave gratuita en <https://aistudio.google.com> (menu **API keys**). No es necesario configurar facturacion.
+2. Definala solo para la sesion de PowerShell; nunca la escriba en el codigo ni la suba a GitHub:
+
+```powershell
+$env:GEMINI_API_KEY = "AIza...su clave..."
+# Opcional: otro modelo disponible en su cuenta
+$env:LLM_MODEL = "gemini-3-flash-preview"
+```
+
+3. Ejecute el simulador como siempre:
+
+```powershell
+.\scripts\run_demo.ps1
+```
+
+Para comprobar solo la conexion:
+
+```powershell
+.\.venv\Scripts\python.exe .\llm\dsar_llm.py "quiero que borren todos mis datos"
+```
+
+Tambien admite OpenRouter con `$env:LLM_PROVIDER = "openrouter"` y `$env:OPENROUTER_API_KEY`. Si no hay clave, se agota la cuota o el modelo falla, el simulador continua con las reglas deterministas y registra el error en `case-package.json`. Para desactivarlo explicitamente use `.\scripts\run_demo.ps1 -NoAI`.
+
+La capa gratuita de Gemini puede usar los prompts para mejorar sus productos. Por eso el proyecto trabaja solo con datos ficticios y aplica minimizacion antes de enviar cualquier contexto.
+
+## 7. Agente en Claude Code
+
+La carpeta `.claude/skills/dsar-rights/` permite que Claude Code actue como el Agente de Derechos DSAR usando el skill del proyecto. Abra Claude Code en la raiz del proyecto y escriba, por ejemplo:
+
+```text
+/dsar-rights Tramita esta solicitud: person-001, identidad verificada, politica LAB-30.
+Texto del titular: "quiero saber que datos tienen de mi y para que los usan"
+```
+
+El agente clasifica el derecho, genera la solicitud, ejecuta el motor y el validador, consulta el RAG y redacta `response-draft-agente.md` en `simulaciones/<caso>/`. Respeta las mismas invariantes: si la identidad no esta verificada se detiene, y ninguna accion se marca como ejecutada.
+
+Tambien puede tramitarse cualquier solicitud en JSON sin el agente:
+
+```powershell
+.\scripts\run_demo.ps1 -Request .\tests\fixtures\request-access.json
+```
+
+## 8. Revisar la salida
 
 Cada ejecucion crea una carpeta en `simulaciones/` con:
 
@@ -132,6 +186,7 @@ Cada ejecucion crea una carpeta en `simulaciones/` con:
 | `request.json` | Solicitud usada por la simulacion. |
 | `case-package.json` | Expediente completo, estados, HITL, contexto RAG, fuentes y auditoria. |
 | `response-draft.md` | Borrador legible de respuesta al titular. |
+| `response-draft-ia.md` | Borrador redactado por el asistente de IA (solo si esta activo). |
 
 Ejemplo para abrir el ultimo borrador desde PowerShell:
 
@@ -142,7 +197,7 @@ Get-ChildItem .\simulaciones -Recurse -Filter response-draft.md |
   ForEach-Object { Invoke-Item $_.FullName }
 ```
 
-## 7. Ejecutar las pruebas manualmente
+## 9. Ejecutar las pruebas manualmente
 
 ```powershell
 .\.venv\Scripts\python.exe -B -m unittest discover -s .\tests -v
@@ -151,13 +206,13 @@ Get-ChildItem .\simulaciones -Recurse -Filter response-draft.md |
 Resultado esperado:
 
 ```text
-Ran 11 tests
+Ran 19 tests
 OK
 ```
 
-Las pruebas cubren el motor DSAR, la recuperacion vectorial, la persistencia del indice y los escenarios completos.
+Las pruebas cubren el motor DSAR, la recuperacion vectorial, la persistencia del indice, los escenarios completos y el asistente de IA. Las pruebas del asistente usan un modelo simulado: no consumen cuota ni necesitan clave.
 
-## 8. Validar un expediente generado
+## 10. Validar un expediente generado
 
 Reemplace `<caso>` por el nombre de la carpeta creada:
 
@@ -173,7 +228,7 @@ El resultado correcto es:
 VALID: expediente DSAR consistente
 ```
 
-## 9. Preparar el proyecto para comprimir
+## 11. Preparar el proyecto para comprimir
 
 Despues de probarlo pueden eliminarse manualmente:
 

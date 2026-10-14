@@ -89,6 +89,20 @@ def validate(package: dict[str, Any]) -> list[str]:
                 errors.append("Fragmento RAG sin procedencia completa")
             if len(str(item.get("sha256", ""))) != 64:
                 errors.append("Fragmento RAG sin huella SHA-256 valida")
+    llm = package.get("llm", {})
+    if llm.get("enabled"):
+        if not llm.get("provider") or not llm.get("model"):
+            errors.append("Asistente IA sin proveedor o modelo registrado")
+        for call in llm.get("calls", []):
+            if len(str(call.get("prompt_sha256", ""))) != 64 or len(
+                str(call.get("response_sha256", ""))
+            ) != 64:
+                errors.append("Llamada al modelo sin huellas SHA-256 validas")
+        classification = llm.get("classification")
+        if classification and classification.get("confirmed_by_human") is not True:
+            errors.append("La clasificacion de la IA no fue confirmada por un humano")
+        if classification and classification.get("final_right") != package["request_type"]:
+            errors.append("El derecho final no coincide con la confirmacion humana")
     return errors
 
 
